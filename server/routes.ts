@@ -11,7 +11,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/upload - Upload and process files
-  app.post("/api/upload", upload.array("files"), async (req, res) => {
+  app.post("/api/upload", upload.any(), async (req, res) => {
     try {
       const files = req.files as Express.Multer.File[];
       const mode = req.body.mode || "manual";
@@ -19,6 +19,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      // Validate file types
+      const allowedTypes = [
+        "application/pdf",
+        "message/rfc822",
+        "application/octet-stream", // EML files sometimes have this type
+      ];
+      const invalidFiles = files.filter(
+        (f) =>
+          !allowedTypes.includes(f.mimetype) &&
+          !f.originalname.toLowerCase().endsWith(".eml") &&
+          !f.originalname.toLowerCase().endsWith(".pdf")
+      );
+      
+      if (invalidFiles.length > 0) {
+        return res.status(400).json({
+          error: "Invalid file type. Only PDF and EML files are supported.",
+        });
+      }
+
+      // Limit file size to 10MB
+      const maxSize = 10 * 1024 * 1024;
+      const oversizedFiles = files.filter((f) => f.size > maxSize);
+      if (oversizedFiles.length > 0) {
+        return res.status(400).json({
+          error: "File size exceeds 10MB limit.",
+        });
       }
 
       const file = files[0]; // For MVP, process first file only
@@ -168,12 +196,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/extract/manual - Save manually extracted data
   app.post("/api/extract/manual", async (req, res) => {
     try {
-      const validated = insertCandidateSchema.parse(req.body);
-      const candidate = await storage.createCandidate(validated);
+      // Clean and prepare data from form
+      const data = {
+        fullName: req.body.fullName || null,
+        emails: Array.isArray(req.body.emails)
+          ? req.body.emails.filter((e: string) => e && e.trim())
+          : [],
+        phones: Array.isArray(req.body.phones)
+          ? req.body.phones.filter((p: string) => p && p.trim())
+          : [],
+        summary: req.body.summary || null,
+        education: req.body.education || [],
+        experience: req.body.experience || [],
+        skills: Array.isArray(req.body.skills)
+          ? req.body.skills.filter((s: string) => s && s.trim())
+          : [],
+        certifications: req.body.certifications || [],
+        attachments: req.body.attachments || [],
+        sourceFile: req.body.sourceFile || "manual-entry",
+        extractionMode: "manual" as const,
+        flagged: false,
+        rawText: req.body.rawText || "",
+      };
+
+      const candidate = await storage.createCandidate(data);
       res.json(candidate);
     } catch (error) {
       console.error("Error saving manual extraction:", error);
-      res.status(400).json({ error: "Invalid candidate data" });
+      res.status(400).json({ error: "Invalid candidate data", details: (error as Error).message });
     }
   });
 
@@ -254,25 +304,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         // Add data rows
-        candidates.forEach((candidate) => {
-          worksheet.addRow({
-            id: candidate.id,
-            fullName: candidate.fullName || "",
-            emails: candidate.emails?.join(", ") || "",
-            phones: candidate.phones?.join(", ") || "",
-            summary: candidate.summary || "",
-            skills: candidate.skills?.join(", ") || "",
-            educationCount: candidate.education?.length || 0,
-            experienceCount: candidate.experience?.length || 0,
-            sourceFile: candidate.sourceFile,
-            extractionMode: candidate.extractionMode,
-            confidence: candidate.confidence?.overall
-              ? (candidate.confidence.overall * 100).toFixed(0) + "%"
-              : "",
-            flagged: candidate.flagged ? "Yes" : "No",
-            extractedAt: new Date(candidate.extractedAt).toLocaleString(),
+        if (candidates && candidates.length > 0) {
+          candidates.forEach((candidate) => {
+            worksheet.addRow({
+              id: candidate.id,
+              fullName: candidate.fullName || "",
+              emails: candidate.emails?.join(", ") || "",
+              phones: candidate.phones?.join(", ") || "",
+              summary: candidate.summary || "",
+              skills: candidate.skills?.join(", ") || "",
+              educationCount: candidate.education?.length || 0,
+              experienceCount: candidate.experience?.length || 0,
+              sourceFile: candidate.sourceFile,
+              extractionMode: candidate.extractionMode,
+              confidence: candidate.confidence?.overall
+                ? (candidate.confidence.overall * 100).toFixed(0) + "%"
+                : "",
+              flagged: candidate.flagged ? "Yes" : "No",
+              extractedAt: new Date(candidate.extractedAt).toLocaleString(),
+            });
           });
-        });
+        }
 
         // Set response headers for file download
         res.setHeader(
