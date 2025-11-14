@@ -1,4 +1,4 @@
-import * as pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import { simpleParser } from "mailparser";
 import { type Attachment } from "@shared/schema";
 
@@ -9,7 +9,8 @@ export interface ProcessedFile {
 
 export async function processPDF(buffer: Buffer, filename: string): Promise<ProcessedFile> {
   try {
-    const data = await (pdfParse as any).default(buffer);
+    const parser = new PDFParse({ data: buffer });
+    const data = await parser.getText();
     return {
       text: data.text,
       attachments: [],
@@ -53,7 +54,8 @@ export async function processEML(buffer: Buffer, filename: string): Promise<Proc
         // Process PDF attachments
         if (att.contentType === "application/pdf" && att.content) {
           try {
-            const pdfData = await (pdfParse as any).default(att.content);
+            const parser = new PDFParse({ data: att.content });
+            const pdfData = await parser.getText();
             attachments.push({
               id: `att-${i}`,
               filename: att.filename || `attachment-${i}.pdf`,
