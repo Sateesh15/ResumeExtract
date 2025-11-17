@@ -7,7 +7,7 @@ import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
 
 async function deleteCandidate(id: string): Promise<void> {
-  const res = await fetch(`/api/candidates/${id}`, { method: "DELETE" });
+  const res = await fetch(`/api/candidates/${id}/delete`, { method: "POST" });
   if (!res.ok) {
     throw new Error(`Failed to delete candidate ${id}`);
   }

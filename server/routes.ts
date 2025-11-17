@@ -157,8 +157,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DELETE /api/candidates/:id - Delete candidate
-  app.delete("/api/candidates/:id", async (req, res) => {
+  // POST /api/candidates/:id/delete - Delete candidate
+  app.post("/api/candidates/:id/delete", async (req, res) => {
     try {
       const deleted = await storage.deleteCandidate(req.params.id);
       if (!deleted) {
