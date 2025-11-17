@@ -1,18 +1,34 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Users, CheckCircle, AlertCircle } from "lucide-react";
+import { FileText, Users, CheckCircle, AlertCircle, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
 
+async function deleteCandidate(id: string): Promise<void> {
+  const res = await fetch(`/api/candidates/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`Failed to delete candidate ${id}`);
+  }
+}
+
 export default function Home() {
+  const queryClient = useQueryClient();
+
   const { data: candidates, isLoading: loadingCandidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
   });
 
   const { data: jobs, isLoading: loadingJobs } = useQuery<ExtractionJob[]>({
     queryKey: ["/api/jobs"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteCandidate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    },
   });
 
   const stats = {
@@ -196,6 +212,17 @@ export default function Home() {
                             View
                           </Button>
                         </Link>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="ml-2"
+                          onClick={() => deleteMutation.mutate(candidate.id)}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-recent-${candidate.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </Button>
                       </td>
                     </tr>
                   ))}

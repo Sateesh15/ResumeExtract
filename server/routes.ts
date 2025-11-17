@@ -157,6 +157,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DELETE /api/candidates/:id - Delete candidate
+  app.delete("/api/candidates/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCandidate(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Candidate not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting candidate:", error);
+      res.status(500).json({ error: "Failed to delete candidate" });
+    }
+  });
+
   // POST /api/candidates/:id/flag - Flag candidate for re-extraction
   app.post("/api/candidates/:id/flag", async (req, res) => {
     try {
