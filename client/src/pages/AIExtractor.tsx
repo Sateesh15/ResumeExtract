@@ -15,6 +15,12 @@ import { apiRequest } from "@/lib/queryClient";
 import { Download, Search, Filter, Upload } from "lucide-react";
 import type { Candidate } from "@shared/schema";
 
+type UploadResponse = {
+  totalFiles?: number;
+  filesProcessed?: number;
+  message?: string;
+};
+
 export default function AIExtractor() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -29,32 +35,45 @@ export default function AIExtractor() {
     select: (data) => data.filter((c) => c.extractionMode === "ai"),
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
-      const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
-      formData.append("mode", "ai");
-      formData.append("autoExtract", autoExtract.toString());
-      
-      const response = await apiRequest("POST", "/api/upload", formData);
-      return response;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      const fileCount = data?.totalFiles || data?.filesProcessed || 1;
-      toast({
-        title: "Upload successful",
-        description: `${fileCount} file(s) uploaded and ${autoExtract ? "extraction started" : "queued"}.`,
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Upload failed",
-        description: "Failed to upload files. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
+const uploadMutation = useMutation<UploadResponse, Error, File[]>({
+  mutationFn: async (files: File[]): Promise<UploadResponse> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    formData.append("mode", "ai");
+    formData.append("autoExtract", autoExtract.toString());
+
+    // apiRequest returns Response
+    const res: Response = await apiRequest("POST", "/api/upload", formData);
+
+    // You MUST convert to JSON here
+    const data = (await res.json()) as UploadResponse;
+
+    return data; // React Query receives UploadResponse
+  },
+
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+
+    // data is no longer UNKNOWN — now correctly typed
+    const fileCount = data.totalFiles ?? data.filesProcessed ?? 1;
+
+    toast({
+      title: "Upload successful",
+      description: `${fileCount} file(s) uploaded and ${
+        autoExtract ? "extraction started" : "queued"
+      }.`,
+    });
+  },
+
+  onError: () => {
+    toast({
+      title: "Upload failed",
+      description: "Failed to upload files. Please try again.",
+      variant: "destructive",
+    });
+  },
+});
+
 
   const updateMutation = useMutation({
     mutationFn: async (candidate: Candidate) => {

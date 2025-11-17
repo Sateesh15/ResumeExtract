@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileUploadZone } from "@/components/FileUploadZone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,14 +9,49 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { FileText, Save, Download, Trash2, Plus } from "lucide-react";
+import { FileText, Save, Download, Trash2, Plus, Loader } from "lucide-react";
 import type { InsertCandidate, Candidate } from "@shared/schema";
+
+type ManualUploadResponse = {
+  success: boolean;
+  rawText: string;
+  attachments: any[];
+  filename: string;
+};
+
+type ExtractedData = {
+  fullName: string | null;
+  emails: string[];
+  phones: string[];
+  summary: string | null;
+  education: Array<{
+    degree: string;
+    institution: string;
+    graduationDate?: string;
+    field?: string;
+  }>;
+  experience: Array<{
+    title: string;
+    company: string;
+    startDate?: string;
+    endDate?: string;
+    description?: string;
+  }>;
+  skills: string[];
+  certifications: Array<{
+    name: string;
+    issuer?: string;
+    date?: string;
+  }>;
+  confidence: any;
+};
 
 export default function ManualExtractor() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [rawText, setRawText] = useState("");
+  const [rawText, setRawText] = useState<string>("");
+  const [isExtracting, setIsExtracting] = useState(false);
   
   const { data: candidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
@@ -38,38 +73,181 @@ export default function ManualExtractor() {
     rawText: "",
   });
 
-  const uploadMutation = useMutation({
+//   const extractCandidateData = async (text: string, filename: string) => {
+//   if (!text) return;
+  
+//   setIsExtracting(true);
+//   console.log("🤖 Starting AI extraction...");
+  
+//   try {
+//     const res = await fetch("/api/extract", {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({
+//         rawText: text,
+//         filename: filename,
+//       }),
+//     });
+
+//     console.log("📊 Response Status:", res.status);
+//     console.log("📊 Response Headers:", {
+//       contentType: res.headers.get("content-type"),
+//     });
+
+//     // Get response text first
+//     const responseText = await res.text();
+//     console.log("📝 Raw Response:", responseText.substring(0, 500));
+
+//     if (!res.ok) {
+//       console.error("❌ HTTP Error:", res.status, responseText);
+//       throw new Error(`HTTP ${res.status}: ${responseText}`);
+//     }
+
+//     // Try to parse as JSON
+//     try {
+//       const extractedData = JSON.parse(responseText) as ExtractedData;
+//       console.log("✅ AI Extraction successful:", extractedData);
+
+//       setFormData((prev) => ({
+//         ...prev,
+//         fullName: extractedData.fullName || "",
+//         emails: extractedData.emails?.length > 0 ? extractedData.emails : [""],
+//         phones: extractedData.phones?.length > 0 ? extractedData.phones : [""],
+//         summary: extractedData.summary || "",
+//         education: extractedData.education || [],
+//         experience: extractedData.experience || [],
+//         skills: extractedData.skills?.length > 0 ? extractedData.skills : [""],
+//         certifications: extractedData.certifications || [],
+//       }));
+
+//       toast({
+//         title: "✅ Data extracted successfully",
+//         description: `Found name: ${extractedData.fullName || "N/A"}`,
+//       });
+//     } catch (parseError) {
+//       console.error("❌ JSON Parse Error:", parseError);
+//       console.error("Response was HTML or invalid JSON");
+//       throw new Error("Invalid response format from server");
+//     }
+//   } catch (error) {
+//     console.error("❌ Extraction error:", error);
+//     toast({
+//       title: "Extraction failed",
+//       description: error instanceof Error ? error.message : "Could not extract data. You can manually enter the information.",
+//       variant: "destructive",
+//     });
+//   } finally {
+//     setIsExtracting(false);
+//   }
+// };
+
+const extractCandidateData = async (text: string, filename: string) => {
+  const res = await fetch("/api/extract/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,        // FIXED
+      filename,    // FIXED
+    }),
+  });
+
+  const responseText = await res.text();
+
+  const extractedData = JSON.parse(responseText);
+
+  setFormData((prev) => ({
+    ...prev,
+    fullName: extractedData.fullName || "",
+    emails: extractedData.emails?.length ? extractedData.emails : [""],
+    phones: extractedData.phones?.length ? extractedData.phones : [""],
+    summary: extractedData.summary || "",
+    skills: extractedData.skills?.length ? extractedData.skills : [""],
+    experience: extractedData.experience || [],
+    education: extractedData.education || [],
+    certifications: extractedData.certifications || [],
+  }));
+};
+
+
+
+  const uploadMutation = useMutation<ManualUploadResponse, Error, File>({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("mode", "manual");
+      console.log("🚀 Starting file upload:", file.name);
       
-      const response = await apiRequest("POST", "/api/upload", formData);
-      return response;
+      const formDataToSend = new FormData();
+      formDataToSend.append("file", file);
+      formDataToSend.append("mode", "manual");
+
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formDataToSend,
+        });
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        
+        const jsonData = (await res.json()) as ManualUploadResponse;
+        console.log("✅ API Response received:", {
+          success: jsonData.success,
+          rawTextLength: jsonData.rawText?.length,
+          filename: jsonData.filename,
+        });
+        
+        return jsonData;
+      } catch (error) {
+        console.error("❌ Upload failed:", error);
+        throw error;
+      }
     },
-    onSuccess: (data) => {
+
+    onSuccess: (data: ManualUploadResponse) => {
+      console.log("📦 onSuccess triggered");
+      
+      // Update rawText
       setRawText(data.rawText || "");
-      setFormData((prev) => ({ ...prev, sourceFile: uploadedFile?.name || "" }));
+      
+      setFormData((prev) => ({
+        ...prev,
+        sourceFile: data.filename || "",
+        rawText: data.rawText || "",
+      }));
+
+      // 🔥 Call AI extraction
+      extractCandidateData(data.rawText, data.filename);
+
       toast({
-        title: "File uploaded successfully",
-        description: "Raw text has been extracted. You can now map the fields.",
+        title: "✅ File uploaded successfully",
+        description: `Extracted ${data.rawText?.length || 0} characters`,
       });
     },
-    onError: () => {
+
+    onError: (error: Error) => {
+      console.error("❌ Upload error:", error);
       toast({
         title: "Upload failed",
-        description: "Failed to upload and extract text from the file.",
+        description: error.message,
         variant: "destructive",
       });
     },
   });
 
-  const saveMutation = useMutation({
+  // Debug: Monitor state changes
+  useEffect(() => {
+    console.log("🔍 rawText state changed:", {
+      length: rawText.length,
+      preview: rawText.substring(0, 50),
+    });
+  }, [rawText]);
+
+  const saveMutation = useMutation<any, Error, InsertCandidate>({
     mutationFn: async (data: InsertCandidate) => {
-      return await apiRequest("POST", "/api/extract/manual", {
+      const res = await apiRequest("POST", "/api/extract/manual", {
         ...data,
         rawText,
       });
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
@@ -90,6 +268,7 @@ export default function ManualExtractor() {
 
   const handleFilesSelected = (files: File[]) => {
     if (files.length > 0) {
+      console.log("📁 File selected:", files[0].name);
       setUploadedFile(files[0]);
       uploadMutation.mutate(files[0]);
     }
@@ -157,7 +336,7 @@ export default function ManualExtractor() {
         <div className="space-y-6">
           <FileUploadZone
             onFilesSelected={handleFilesSelected}
-            disabled={uploadMutation.isPending}
+            disabled={uploadMutation.isPending || isExtracting}
           />
 
           {uploadedFile && (
@@ -183,20 +362,30 @@ export default function ManualExtractor() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Raw Extracted Text</CardTitle>
+              <CardTitle className="text-lg">
+                Raw Extracted Text
+                {rawText && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({rawText.length} characters)
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div
-                className="h-96 overflow-y-auto p-4 rounded-lg bg-muted font-mono text-sm border"
+                className="h-96 overflow-y-auto p-4 rounded-lg bg-muted font-mono text-sm border border-input"
                 data-testid="text-raw-extracted"
               >
-                {uploadMutation.isPending ? (
-                  <p className="text-muted-foreground">Extracting text...</p>
-                ) : rawText ? (
-                  <pre className="whitespace-pre-wrap">{rawText}</pre>
+                {uploadMutation.isPending || isExtracting ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader className="h-4 w-4 animate-spin" />
+                    <p>Extracting text...</p>
+                  </div>
+                ) : rawText && rawText.length > 0 ? (
+                  <pre className="whitespace-pre-wrap break-words text-xs">{rawText}</pre>
                 ) : (
                   <p className="text-muted-foreground">
-                    Upload a file to see extracted text here
+                    📄 Upload a file to see extracted text here
                   </p>
                 )}
               </div>
@@ -208,7 +397,15 @@ export default function ManualExtractor() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Candidate Information</CardTitle>
+              <CardTitle className="text-lg">
+                Candidate Information
+                {isExtracting && (
+                  <span className="text-sm font-normal text-amber-600 ml-2 flex items-center gap-1">
+                    <Loader className="h-3 w-3 animate-spin" />
+                    Populating fields...
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
@@ -221,6 +418,7 @@ export default function ManualExtractor() {
                   }
                   placeholder="John Doe"
                   data-testid="input-manual-fullname"
+                  disabled={isExtracting}
                 />
               </div>
 
@@ -235,6 +433,7 @@ export default function ManualExtractor() {
                     variant="outline"
                     onClick={() => addArrayField("emails")}
                     data-testid="button-manual-add-email"
+                    disabled={isExtracting}
                   >
                     <Plus className="h-4 w-4 mr-1" />
                     Add
@@ -248,6 +447,7 @@ export default function ManualExtractor() {
                         onChange={(e) => updateArrayField(i, e.target.value, "emails")}
                         placeholder="email@example.com"
                         data-testid={`input-manual-email-${i}`}
+                        disabled={isExtracting}
                       />
                       {formData.emails && formData.emails.length > 1 && (
                         <Button
@@ -255,6 +455,7 @@ export default function ManualExtractor() {
                           variant="outline"
                           onClick={() => removeArrayField(i, "emails")}
                           data-testid={`button-manual-remove-email-${i}`}
+                          disabled={isExtracting}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -273,6 +474,7 @@ export default function ManualExtractor() {
                     variant="outline"
                     onClick={() => addArrayField("phones")}
                     data-testid="button-manual-add-phone"
+                    disabled={isExtracting}
                   >
                     <Plus className="h-4 w-4 mr-1" />
                     Add
@@ -286,6 +488,7 @@ export default function ManualExtractor() {
                         onChange={(e) => updateArrayField(i, e.target.value, "phones")}
                         placeholder="+1 (555) 000-0000"
                         data-testid={`input-manual-phone-${i}`}
+                        disabled={isExtracting}
                       />
                       {formData.phones && formData.phones.length > 1 && (
                         <Button
@@ -293,6 +496,7 @@ export default function ManualExtractor() {
                           variant="outline"
                           onClick={() => removeArrayField(i, "phones")}
                           data-testid={`button-manual-remove-phone-${i}`}
+                          disabled={isExtracting}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -313,6 +517,7 @@ export default function ManualExtractor() {
                     variant="outline"
                     onClick={() => addArrayField("skills")}
                     data-testid="button-manual-add-skill"
+                    disabled={isExtracting}
                   >
                     <Plus className="h-4 w-4 mr-1" />
                     Add
@@ -326,6 +531,7 @@ export default function ManualExtractor() {
                         onChange={(e) => updateArrayField(i, e.target.value, "skills")}
                         placeholder="e.g., JavaScript, Project Management"
                         data-testid={`input-manual-skill-${i}`}
+                        disabled={isExtracting}
                       />
                       {formData.skills && formData.skills.length > 1 && (
                         <Button
@@ -333,6 +539,7 @@ export default function ManualExtractor() {
                           variant="outline"
                           onClick={() => removeArrayField(i, "skills")}
                           data-testid={`button-manual-remove-skill-${i}`}
+                          disabled={isExtracting}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -355,6 +562,7 @@ export default function ManualExtractor() {
                   rows={4}
                   placeholder="Brief professional summary..."
                   data-testid="textarea-manual-summary"
+                  disabled={isExtracting}
                 />
               </div>
             </CardContent>
@@ -365,7 +573,7 @@ export default function ManualExtractor() {
             <div className="flex items-center gap-3">
               <Button
                 onClick={handleSave}
-                disabled={saveMutation.isPending || !formData.fullName}
+                disabled={saveMutation.isPending || !formData.fullName || isExtracting}
                 className="flex-1"
                 data-testid="button-manual-save"
               >
@@ -376,6 +584,7 @@ export default function ManualExtractor() {
                 variant="outline"
                 onClick={handleClear}
                 data-testid="button-manual-clear"
+                disabled={isExtracting}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Clear

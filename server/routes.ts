@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import ExcelJS from "exceljs";
@@ -192,6 +192,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to flag candidate" });
     }
   });
+
+  app.post("/api/extract", async (req: Request, res: Response) => {
+  console.log("🚀 START /api/extract");
+  
+  try {
+    const { rawText, filename } = req.body;
+    console.log("✅ Received:", { filename, textLength: rawText?.length });
+
+    if (!rawText) {
+      return res.status(400).json({ error: "rawText is required" });
+    }
+
+    console.log("⏳ Calling extractResumeData...");
+    const start = Date.now();
+    
+    const extractedData = await extractResumeData(rawText, filename || "unknown");
+    
+    const duration = Date.now() - start;
+    console.log(`✅ extractResumeData took ${duration}ms`);
+    console.log("📦 Response data:", {
+      fullName: extractedData?.fullName,
+      hasEmails: !!extractedData?.emails,
+      emailCount: extractedData?.emails?.length,
+      hasSkills: !!extractedData?.skills,
+      skillCount: extractedData?.skills?.length,
+    });
+
+    if (!extractedData) {
+      console.error("❌ extractResumeData returned nothing!");
+      return res.status(500).json({ error: "No data returned from extraction" });
+    }
+
+    console.log("📤 Sending JSON response");
+    res.json(extractedData);
+    console.log("🏁 END /api/extract - SUCCESS");
+  } catch (error) {
+    console.error("💥 CAUGHT ERROR:", error);
+    console.error("Error type:", error?.constructor?.name);
+    console.error("Error message:", error instanceof Error ? error.message : String(error));
+    
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Extraction failed",
+    });
+    console.log("🏁 END /api/extract - ERROR");
+  }
+});
 
   // POST /api/extract/manual - Save manually extracted data
   app.post("/api/extract/manual", async (req, res) => {
