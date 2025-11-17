@@ -137,20 +137,8 @@ Rules:
     };
   } catch (error) {
     console.error("AI extraction error:", error);
-    // Return empty data with low confidence on error
-    return {
-      fullName: null,
-      emails: [],
-      phones: [],
-      summary: null,
-      education: [],
-      experience: [],
-      skills: [],
-      certifications: [],
-      confidence: {
-        overall: 0.1,
-      },
-    };
+    // Re-throw the error to be handled by the route
+    throw error;
   }
 }
 

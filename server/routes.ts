@@ -239,7 +239,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(extracted);
     } catch (error) {
       console.error("Error in AI extraction:", error);
-      res.status(500).json({ error: "AI extraction failed" });
+      const message =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      res
+        .status(500)
+        .json({ error: "AI extraction failed", details: message });
     }
   });
 
