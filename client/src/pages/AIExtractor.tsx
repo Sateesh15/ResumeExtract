@@ -35,26 +35,69 @@ export default function AIExtractor() {
     select: (data) => data.filter((c) => c.extractionMode === "ai"),
   });
 
+// const uploadMutation = useMutation<UploadResponse, Error, File[]>({
+//   mutationFn: async (files: File[]): Promise<UploadResponse> => {
+//     const formData = new FormData();
+//     files.forEach((file) => formData.append("files", file));
+//     formData.append("mode", "ai");
+//     formData.append("autoExtract", autoExtract.toString());
+
+//     // apiRequest returns Response
+//     const res: Response = await apiRequest("POST", "/api/upload", formData);
+
+//     // You MUST convert to JSON here
+//     const data = (await res.json()) as UploadResponse;
+
+//     return data; // React Query receives UploadResponse
+//   },
+
+//   onSuccess: (data) => {
+//     queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+
+//     // data is no longer UNKNOWN — now correctly typed
+//     const fileCount = data.totalFiles ?? data.filesProcessed ?? 1;
+
+//     toast({
+//       title: "Upload successful",
+//       description: `${fileCount} file(s) uploaded and ${
+//         autoExtract ? "extraction started" : "queued"
+//       }.`,
+//     });
+//   },
+
+//   onError: () => {
+//     toast({
+//       title: "Upload failed",
+//       description: "Failed to upload files. Please try again.",
+//       variant: "destructive",
+//     });
+//   },
+// });
+
 const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   mutationFn: async (files: File[]): Promise<UploadResponse> => {
     const formData = new FormData();
-    files.forEach((file) => formData.append("files", file));
+    files.forEach((file) => formData.append("file", file)); // ✅ Use "file" not "files"
     formData.append("mode", "ai");
     formData.append("autoExtract", autoExtract.toString());
 
-    // apiRequest returns Response
-    const res: Response = await apiRequest("POST", "/api/upload", formData);
+    // ✅ Use fetch directly, NOT apiRequest
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData, // ✅ FormData is sent directly
+      // DO NOT set Content-Type header - browser will set it automatically
+    });
 
-    // You MUST convert to JSON here
+    if (!res.ok) {
+      throw new Error(`Upload failed: ${res.status}`);
+    }
+
     const data = (await res.json()) as UploadResponse;
-
-    return data; // React Query receives UploadResponse
+    return data;
   },
 
   onSuccess: (data) => {
     queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-
-    // data is no longer UNKNOWN — now correctly typed
     const fileCount = data.totalFiles ?? data.filesProcessed ?? 1;
 
     toast({
@@ -65,15 +108,15 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
     });
   },
 
-  onError: () => {
+  onError: (error) => {
+    console.error("Upload error:", error);
     toast({
       title: "Upload failed",
-      description: "Failed to upload files. Please try again.",
+      description: error.message || "Failed to upload files. Please try again.",
       variant: "destructive",
     });
   },
 });
-
 
   const updateMutation = useMutation({
     mutationFn: async (candidate: Candidate) => {
