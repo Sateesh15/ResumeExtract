@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 import { Flag, Save, X, Plus, Trash2 } from "lucide-react";
-import type { Candidate, Education, Experience, Certification } from "@shared/schema";
+import type { Candidate } from "@shared/schema";
 
 interface CandidateDetailModalProps {
   candidate: Candidate | null;
@@ -33,74 +34,90 @@ export function CandidateDetailModal({
 }: CandidateDetailModalProps) {
   const [editedCandidate, setEditedCandidate] = useState<Candidate | null>(null);
 
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen && candidate) {
+  // ✅ FIX: Sync editedCandidate with candidate prop when modal opens
+  useEffect(() => {
+    if (open && candidate) {
+      console.log("🔵 Modal opened with candidate:", candidate);
       setEditedCandidate({ ...candidate });
     }
-    onOpenChange(isOpen);
-  };
+  }, [open, candidate]);
 
   const handleSave = () => {
     if (editedCandidate) {
+      console.log("💾 Saving candidate:", editedCandidate);
       onSave(editedCandidate);
       onOpenChange(false);
     }
   };
 
-  if (!editedCandidate) return null;
-
-  const updateField = <K extends keyof Candidate>(field: K, value: Candidate[K]) => {
-    setEditedCandidate({ ...editedCandidate, [field]: value });
+  const updateField = <K extends keyof Candidate>(
+    field: K,
+    value: Candidate[K]
+  ) => {
+    setEditedCandidate((prev) =>
+      prev ? { ...prev, [field]: value } : null
+    );
   };
 
-  const updateArrayField = (index: number, value: string, field: "emails" | "phones" | "skills") => {
+  const updateArrayField = (
+    index: number,
+    value: string,
+    field: "emails" | "phones" | "skills"
+  ) => {
+    if (!editedCandidate) return;
     const updated = [...(editedCandidate[field] || [])];
     updated[index] = value;
     updateField(field, updated);
   };
 
   const addArrayField = (field: "emails" | "phones" | "skills") => {
+    if (!editedCandidate) return;
     const updated = [...(editedCandidate[field] || []), ""];
     updateField(field, updated);
   };
 
-  const removeArrayField = (index: number, field: "emails" | "phones" | "skills") => {
+  const removeArrayField = (
+    index: number,
+    field: "emails" | "phones" | "skills"
+  ) => {
+    if (!editedCandidate) return;
     const updated = (editedCandidate[field] || []).filter((_, i) => i !== index);
     updateField(field, updated);
   };
 
+  // ✅ FIX: Don't render if no edited candidate
+  if (!editedCandidate) return null;
+
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="modal-candidate-detail">
-        <DialogHeader className="pb-4 border-b">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <DialogTitle className="text-2xl" data-testid="text-candidate-modal-name">
-                {editedCandidate.fullName || "Candidate Details"}
-              </DialogTitle>
-              <div className="flex items-center gap-2 mt-2">
-                {editedCandidate.confidence && (
-                  <ConfidenceBadge score={editedCandidate.confidence.overall} />
-                )}
-                <Badge variant="secondary" className="text-xs">
-                  {editedCandidate.extractionMode === "ai" ? "AI Extracted" : "Manual Entry"}
-                </Badge>
-                {editedCandidate.flagged && (
-                  <Badge variant="destructive" className="gap-1">
-                    <Flag className="h-3 w-3" />
-                    Flagged
-                  </Badge>
-                )}
-              </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between">
+            <span>{editedCandidate.fullName || "Candidate Details"}</span>
+            <div className="flex items-center gap-2">
+              {editedCandidate.confidence && (
+  <ConfidenceBadge score={editedCandidate.confidence.overall} />
+)}
+              <Badge variant="outline">
+                {editedCandidate.extractionMode === "ai"
+                  ? "AI Extracted"
+                  : "Manual Entry"}
+              </Badge>
+              {editedCandidate.flagged && (
+                <Badge variant="destructive">Flagged</Badge>
+              )}
             </div>
-          </div>
+          </DialogTitle>
+          <DialogDescription>
+    View and edit candidate information extracted from resume
+  </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-8 py-4">
+        <div className="space-y-6">
           {/* Basic Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Basic Information</h3>
-            <div className="grid gap-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Basic Information</h3>
+            <div className="space-y-4">
               <div>
                 <Label htmlFor="fullName">Full Name</Label>
                 <Input
@@ -121,7 +138,7 @@ export function CandidateDetailModal({
                     onClick={() => addArrayField("emails")}
                     data-testid="button-add-email"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
+                    <Plus className="h-3 w-3 mr-1" />
                     Add Email
                   </Button>
                 </div>
@@ -130,13 +147,15 @@ export function CandidateDetailModal({
                     <div key={i} className="flex gap-2">
                       <Input
                         value={email}
-                        onChange={(e) => updateArrayField(i, e.target.value, "emails")}
+                        onChange={(e) =>
+                          updateArrayField(i, e.target.value, "emails")
+                        }
                         placeholder="email@example.com"
                         data-testid={`input-email-${i}`}
                       />
                       <Button
                         size="icon"
-                        variant="outline"
+                        variant="ghost"
                         onClick={() => removeArrayField(i, "emails")}
                         data-testid={`button-remove-email-${i}`}
                       >
@@ -157,7 +176,7 @@ export function CandidateDetailModal({
                     onClick={() => addArrayField("phones")}
                     data-testid="button-add-phone"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
+                    <Plus className="h-3 w-3 mr-1" />
                     Add Phone
                   </Button>
                 </div>
@@ -166,13 +185,15 @@ export function CandidateDetailModal({
                     <div key={i} className="flex gap-2">
                       <Input
                         value={phone}
-                        onChange={(e) => updateArrayField(i, e.target.value, "phones")}
+                        onChange={(e) =>
+                          updateArrayField(i, e.target.value, "phones")
+                        }
                         placeholder="+1 (555) 000-0000"
                         data-testid={`input-phone-${i}`}
                       />
                       <Button
                         size="icon"
-                        variant="outline"
+                        variant="ghost"
                         onClick={() => removeArrayField(i, "phones")}
                         data-testid={`button-remove-phone-${i}`}
                       >
@@ -183,6 +204,7 @@ export function CandidateDetailModal({
                 </div>
               </div>
 
+              {/* Summary */}
               <div>
                 <Label htmlFor="summary">Summary</Label>
                 <Textarea
@@ -199,8 +221,8 @@ export function CandidateDetailModal({
           <Separator />
 
           {/* Skills */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold">Skills</h3>
               <Button
                 size="sm"
@@ -208,7 +230,7 @@ export function CandidateDetailModal({
                 onClick={() => addArrayField("skills")}
                 data-testid="button-add-skill"
               >
-                <Plus className="h-4 w-4 mr-1" />
+                <Plus className="h-3 w-3 mr-1" />
                 Add Skill
               </Button>
             </div>
@@ -217,13 +239,15 @@ export function CandidateDetailModal({
                 <div key={i} className="flex gap-2">
                   <Input
                     value={skill}
-                    onChange={(e) => updateArrayField(i, e.target.value, "skills")}
+                    onChange={(e) =>
+                      updateArrayField(i, e.target.value, "skills")
+                    }
                     placeholder="e.g., JavaScript, Project Management"
                     data-testid={`input-skill-${i}`}
                   />
                   <Button
                     size="icon"
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => removeArrayField(i, "skills")}
                     data-testid={`button-remove-skill-${i}`}
                   >
@@ -237,17 +261,20 @@ export function CandidateDetailModal({
           <Separator />
 
           {/* Education & Experience - Simplified for MVP */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Education & Experience</h3>
+          <div>
+            <h3 className="text-lg font-semibold mb-2">
+              Education & Experience
+            </h3>
             <p className="text-sm text-muted-foreground">
               Education: {editedCandidate.education?.length || 0} entries |
               Experience: {editedCandidate.experience?.length || 0} entries |
-              Certifications: {editedCandidate.certifications?.length || 0} entries
+              Certifications: {editedCandidate.certifications?.length || 0}{" "}
+              entries
             </p>
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter>
           {onFlag && !editedCandidate.flagged && (
             <Button
               variant="outline"
@@ -261,11 +288,14 @@ export function CandidateDetailModal({
               Flag for Deep Extraction
             </Button>
           )}
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
-            <X className="h-4 w-4 mr-2" />
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel"
+          >
             Cancel
           </Button>
-          <Button onClick={handleSave} data-testid="button-save-candidate">
+          <Button onClick={handleSave} data-testid="button-save">
             <Save className="h-4 w-4 mr-2" />
             Save Changes
           </Button>
