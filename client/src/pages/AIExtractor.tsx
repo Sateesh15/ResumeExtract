@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Download, Search, Filter, Upload } from "lucide-react";
 import type { Candidate } from "@shared/schema";
+import { Trash2 } from "lucide-react";
+
 
 type UploadResponse = {
   totalFiles?: number;
@@ -176,6 +178,68 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
     },
   });
 
+  // ✅ DELETE MUTATIONS
+const deleteMutation = useMutation({
+  mutationFn: async (candidateId: string) => {
+    const res = await fetch(`/api/candidates/${candidateId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Deleted",
+      description: "Candidate has been removed.",
+    });
+  },
+  onError: () => {
+    toast({
+      title: "❌ Delete failed",
+      description: "Could not delete candidate.",
+      variant: "destructive",
+    });
+  },
+});
+
+const deleteAllMutation = useMutation({
+  mutationFn: async () => {
+    const res = await fetch("/api/candidates", {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete all");
+    return res.json();
+  },
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ All deleted",
+      description: `${data.deletedCount} candidates removed.`,
+    });
+  },
+  onError: () => {
+    toast({
+      title: "❌ Delete failed",
+      description: "Could not delete candidates.",
+      variant: "destructive",
+    });
+  },
+});
+
+const handleDeleteCandidate = (candidateId: string) => {
+  if (window.confirm("Are you sure you want to delete this candidate?")) {
+    deleteMutation.mutate(candidateId);
+  }
+};
+
+const handleDeleteAll = () => {
+  if (window.confirm("⚠️ Are you sure? This will delete ALL candidates!")) {
+    deleteAllMutation.mutate();
+  }
+};
+
+
   const handleFilesSelected = (files: File[]) => {
     if (files.length > 0) {
       uploadMutation.mutate(files);
@@ -282,6 +346,19 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
             data-testid="input-search-candidates"
           />
         </div>
+         {/* ✅ ADD Delete All button */}
+  {candidates && candidates.length > 0 && (
+    <Button
+      variant="destructive"
+      size="sm"
+      onClick={handleDeleteAll}
+      disabled={deleteAllMutation.isPending}
+      className="gap-2"
+    >
+      <Trash2 className="h-4 w-4" />
+      Delete All
+    </Button>
+  )}
         <Button
           variant="outline"
           onClick={() => exportMutation.mutate()}

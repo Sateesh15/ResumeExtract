@@ -13,6 +13,7 @@ export interface IStorage {
   createCandidate(candidate: InsertCandidate): Promise<Candidate>;
   updateCandidate(id: string, candidate: Partial<Candidate>): Promise<Candidate | undefined>;
   deleteCandidate(id: string): Promise<boolean>;
+  deleteAllCandidates(): Promise<number>;
   flagCandidate(id: string): Promise<Candidate | undefined>;
 
   // Extraction job operations
@@ -68,6 +69,13 @@ export class MemStorage implements IStorage {
   async deleteCandidate(id: string): Promise<boolean> {
     return this.candidates.delete(id);
   }
+  
+  async deleteAllCandidates(): Promise<number> {
+    const count = this.candidates.size;
+    this.candidates.clear();
+    return count;
+  }
+
 
   async flagCandidate(id: string): Promise<Candidate | undefined> {
     const candidate = this.candidates.get(id);

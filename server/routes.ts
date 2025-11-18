@@ -393,6 +393,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // ✅ DELETE /api/candidates/:id - Delete single candidate
+app.delete("/api/candidates/:id", async (req: Request, res: Response) => {
+  try {
+    const deleted = await storage.deleteCandidate(req.params.id);
+
+    if (!deleted) {
+      res.setHeader("Content-Type", "application/json");
+      return res.status(404).json({
+        success: false,
+        error: "Candidate not found",
+      });
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({
+      success: true,
+      message: "Candidate deleted successfully",
+      id: req.params.id,
+    });
+  } catch (error) {
+    res.setHeader("Content-Type", "application/json");
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete candidate",
+    });
+  }
+});
+
+// ✅ DELETE /api/candidates - Delete all candidates
+app.delete("/api/candidates", async (req: Request, res: Response) => {
+  try {
+    const count = await storage.deleteAllCandidates();
+
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({
+      success: true,
+      message: "All candidates deleted successfully",
+      deletedCount: count,
+    });
+  } catch (error) {
+    res.setHeader("Content-Type", "application/json");
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete all candidates",
+    });
+  }
+});
+
+
   const httpServer = createServer(app);
   return httpServer;
 }

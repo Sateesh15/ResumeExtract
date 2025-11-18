@@ -1,3 +1,6 @@
+import { useToast } from "@/hooks/use-toast";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,72 @@ export default function Home() {
     completedJobs: jobs?.filter((j) => j.status === "completed").length || 0,
     processingJobs: jobs?.filter((j) => j.status === "processing").length || 0,
   };
+
+  const { toast } = useToast();
+const queryClient = useQueryClient();
+
+// Delete single candidate
+const deleteMutation = useMutation({
+  mutationFn: async (id: string) => {
+    const res = await fetch(`/api/candidates/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Deleted",
+      description: "Candidate has been removed.",
+    });
+  },
+  onError: () => {
+    toast({
+      title: "❌ Delete failed",
+      description: "Could not delete candidate.",
+      variant: "destructive",
+    });
+  },
+});
+
+// Delete all candidates
+const deleteAllMutation = useMutation({
+  mutationFn: async () => {
+    const res = await fetch("/api/candidates", {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete all");
+    return res.json();
+  },
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ All deleted",
+      description: `${data.deletedCount} candidates removed.`,
+    });
+  },
+  onError: () => {
+    toast({
+      title: "❌ Delete failed",
+      description: "Could not delete candidates.",
+      variant: "destructive",
+    });
+  },
+});
+
+const handleDeleteOne = (id: string) => {
+  if (window.confirm("Are you sure you want to delete this candidate?")) {
+    deleteMutation.mutate(id);
+  }
+};
+
+const handleDeleteAll = () => {
+  if (window.confirm("⚠️ Are you sure? This will delete ALL candidates!")) {
+    deleteAllMutation.mutate();
+  }
+};
+
 
   return (
     <div className="p-6 max-w-7xl mx-auto" data-testid="page-home">
@@ -135,9 +204,22 @@ export default function Home() {
 
       {/* Recent Uploads Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Recent Uploads</CardTitle>
-        </CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
+  <CardTitle>Recent Uploads</CardTitle>
+  {stats.totalCandidates > 0 && (
+    <Button
+      variant="destructive"
+      size="sm"
+      onClick={handleDeleteAll}
+      disabled={deleteAllMutation.isPending}
+      className="gap-2"
+    >
+      <Trash2 className="h-4 w-4" />
+      Delete All
+    </Button>
+  )}
+</CardHeader>
+
         <CardContent>
           {loadingCandidates ? (
             <div className="space-y-3">
@@ -190,13 +272,25 @@ export default function Home() {
                           {new Date(candidate.extractedAt).toLocaleDateString()}
                         </p>
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
-                          <Button size="sm" variant="outline" data-testid={`button-view-recent-${candidate.id}`}>
-                            View
-                          </Button>
-                        </Link>
-                      </td>
+                      <td className="py-3 px-4">
+  <div className="flex gap-2 justify-end">
+    <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
+      <Button size="sm" variant="outline">
+        View
+      </Button>
+    </Link>
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => handleDeleteOne(candidate.id)}
+      disabled={deleteMutation.isPending}
+      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  </div>
+</td>
+
                     </tr>
                   ))}
                 </tbody>
