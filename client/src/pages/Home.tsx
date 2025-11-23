@@ -8,8 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Users, CheckCircle, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
+import { CandidateFilter } from '@/components/CandidateFilter';
+import { useState, useEffect } from 'react'; // ✅ ADDED
 
 export default function Home() {
+  // ✅ Existing React Query - KEEP THIS
   const { data: candidates, isLoading: loadingCandidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
   });
@@ -17,6 +20,16 @@ export default function Home() {
   const { data: jobs, isLoading: loadingJobs } = useQuery<ExtractionJob[]>({
     queryKey: ["/api/jobs"],
   });
+
+  // ✅ NEW - Filter state (only this one, remove duplicate useState/useEffect)
+  const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([]);
+
+  // ✅ NEW - Initialize filtered candidates when data loads
+  useEffect(() => {
+    if (candidates) {
+      setFilteredCandidates(candidates);
+    }
+  }, [candidates]);
 
   const stats = {
     totalCandidates: candidates?.length || 0,
@@ -26,70 +39,97 @@ export default function Home() {
   };
 
   const { toast } = useToast();
-const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
 
-// Delete single candidate
-const deleteMutation = useMutation({
-  mutationFn: async (id: string) => {
-    const res = await fetch(`/api/candidates/${id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) throw new Error("Failed to delete");
-    return res.json();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-    toast({
-      title: "✅ Deleted",
-      description: "Candidate has been removed.",
-    });
-  },
-  onError: () => {
-    toast({
-      title: "❌ Delete failed",
-      description: "Could not delete candidate.",
-      variant: "destructive",
-    });
-  },
-});
+  // Delete single candidate
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+      toast({
+        title: "✅ Deleted",
+        description: "Candidate has been removed.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "❌ Delete failed",
+        description: "Could not delete candidate.",
+        variant: "destructive",
+      });
+    },
+  });
 
-// Delete all candidates
-const deleteAllMutation = useMutation({
-  mutationFn: async () => {
-    const res = await fetch("/api/candidates", {
-      method: "DELETE",
-    });
-    if (!res.ok) throw new Error("Failed to delete all");
-    return res.json();
-  },
-  onSuccess: (data) => {
-    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-    toast({
-      title: "✅ All deleted",
-      description: `${data.deletedCount} candidates removed.`,
-    });
-  },
-  onError: () => {
-    toast({
-      title: "❌ Delete failed",
-      description: "Could not delete candidates.",
-      variant: "destructive",
-    });
-  },
-});
+  // Delete all candidates
+  const deleteAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/candidates", {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete all");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+      toast({
+        title: "✅ All deleted",
+        description: `${data.deletedCount} candidates removed.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "❌ Delete failed",
+        description: "Could not delete candidates.",
+        variant: "destructive",
+      });
+    },
+  });
 
-const handleDeleteOne = (id: string) => {
-  if (window.confirm("Are you sure you want to delete this candidate?")) {
-    deleteMutation.mutate(id);
-  }
-};
+  const handleDeleteOne = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this candidate?")) {
+      deleteMutation.mutate(id);
+    }
+  };
 
-const handleDeleteAll = () => {
-  if (window.confirm("⚠️ Are you sure? This will delete ALL candidates!")) {
-    deleteAllMutation.mutate();
-  }
-};
+  const handleDeleteAll = () => {
+    if (window.confirm("⚠️ Are you sure? This will delete ALL candidates!")) {
+      deleteAllMutation.mutate();
+    }
+  };
 
+  // ✅ NEW - Handle filter changes
+  const handleFilterChange = async (criteria: any) => {
+    try {
+      const response = await fetch('/api/candidates/filter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(criteria),
+      });
+      
+      const data = await response.json();
+      // Check if we have valid data before setting
+if (data && data.candidates && Array.isArray(data.candidates)) {
+  setFilteredCandidates(data.candidates);
+} else {
+  // Fallback to all candidates if response is invalid
+  if (candidates) {
+    setFilteredCandidates(candidates);
+    }
+   } 
+  } catch (error) {
+      console.error('Filter error:', error);
+      // On error, show all candidates
+      if (candidates) {
+        setFilteredCandidates(candidates);
+      }
+    }
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto" data-testid="page-home">
@@ -202,23 +242,34 @@ const handleDeleteAll = () => {
         </Card>
       </div>
 
+      {/* ✅ NEW - Candidate Filter Component */}
+      {!loadingCandidates && candidates && candidates.length > 0 && (
+        <div className="mb-8">
+          <CandidateFilter
+            onFilterChange={handleFilterChange}
+            totalCount={candidates?.length || 0}
+            filteredCount={filteredCandidates.length}
+          />
+        </div>
+      )}
+
       {/* Recent Uploads Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-  <CardTitle>Recent Uploads</CardTitle>
-  {stats.totalCandidates > 0 && (
-    <Button
-      variant="destructive"
-      size="sm"
-      onClick={handleDeleteAll}
-      disabled={deleteAllMutation.isPending}
-      className="gap-2"
-    >
-      <Trash2 className="h-4 w-4" />
-      Delete All
-    </Button>
-  )}
-</CardHeader>
+          <CardTitle>Recent Uploads</CardTitle>
+          {stats.totalCandidates > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAll}
+              disabled={deleteAllMutation.isPending}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete All
+            </Button>
+          )}
+        </CardHeader>
 
         <CardContent>
           {loadingCandidates ? (
@@ -227,7 +278,7 @@ const handleDeleteAll = () => {
                 <Skeleton key={i} className="h-14 w-full" />
               ))}
             </div>
-          ) : candidates && candidates.length > 0 ? (
+          ) : filteredCandidates && filteredCandidates.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full" data-testid="table-recent-uploads">
                 <thead className="border-b">
@@ -241,7 +292,8 @@ const handleDeleteAll = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.slice(0, 5).map((candidate) => (
+                  {/* ✅ CHANGED - Using filteredCandidates instead of candidates */}
+                  {filteredCandidates.slice(0, 5).map((candidate) => (
                     <tr
                       key={candidate.id}
                       className="border-b hover-elevate"
@@ -273,24 +325,23 @@ const handleDeleteAll = () => {
                         </p>
                       </td>
                       <td className="py-3 px-4">
-  <div className="flex gap-2 justify-end">
-    <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
-      <Button size="sm" variant="outline">
-        View
-      </Button>
-    </Link>
-    <Button
-      size="sm"
-      variant="ghost"
-      onClick={() => handleDeleteOne(candidate.id)}
-      disabled={deleteMutation.isPending}
-      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-    >
-      <Trash2 className="h-4 w-4" />
-    </Button>
-  </div>
-</td>
-
+                        <div className="flex gap-2 justify-end">
+                          <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
+                            <Button size="sm" variant="outline">
+                              View
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteOne(candidate.id)}
+                            disabled={deleteMutation.isPending}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -299,7 +350,7 @@ const handleDeleteAll = () => {
           ) : (
             <div className="text-center py-8 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>No candidates yet. Start extracting resumes to see them here.</p>
+              <p>No candidates match your filter criteria</p>
             </div>
           )}
         </CardContent>

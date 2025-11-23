@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { processFile } from "./lib/fileProcessing";
 import { extractResumeData } from "./lib/openai";
 import { insertCandidateSchema } from "@shared/schema";
+import { filterCandidates, type FilterCriteria } from "./lib/filterUtils";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -658,6 +659,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to fetch candidates" });
     }
   });
+
+   // ✅ POST /api/candidates/filter - Filter candidates
+app.post("/api/candidates/filter", async (req: Request, res: Response) => {
+  try {
+    const criteria: FilterCriteria = req.body;
+    const allCandidates = await storage.getCandidates();
+    
+    const filtered = filterCandidates(
+      allCandidates as any,  // ✅ Type cast to fix error
+      criteria,
+      calculateTotalExperience
+    );
+
+    res.json({
+      success: true,
+      total: allCandidates.length,
+      filtered: filtered.length,
+      candidates: filtered,
+      criteria: criteria,
+    });
+  } catch (error) {
+    console.error("Error filtering candidates:", error);
+    res.status(500).json({ 
+      error: "Failed to filter candidates",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
 
   // GET /api/candidates/:id - Get single candidate
   app.get("/api/candidates/:id", async (req, res) => {
