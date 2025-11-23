@@ -1,6 +1,6 @@
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,9 @@ import { FileText, Users, CheckCircle, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
 import { CandidateFilter } from '@/components/CandidateFilter';
-import { useState, useEffect } from 'react'; // ✅ ADDED
+import { useState, useEffect } from 'react';
 
 export default function Home() {
-  // ✅ Existing React Query - KEEP THIS
   const { data: candidates, isLoading: loadingCandidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
   });
@@ -21,10 +20,9 @@ export default function Home() {
     queryKey: ["/api/jobs"],
   });
 
-  // ✅ NEW - Filter state (only this one, remove duplicate useState/useEffect)
   const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // ✅ NEW - Initialize filtered candidates when data loads
   useEffect(() => {
     if (candidates) {
       setFilteredCandidates(candidates);
@@ -41,7 +39,6 @@ export default function Home() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Delete single candidate
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/candidates/${id}`, {
@@ -66,7 +63,6 @@ export default function Home() {
     },
   });
 
-  // Delete all candidates
   const deleteAllMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/candidates", {
@@ -103,7 +99,6 @@ export default function Home() {
     }
   };
 
-  // ✅ NEW - Handle filter changes
   const handleFilterChange = async (criteria: any) => {
     try {
       const response = await fetch('/api/candidates/filter', {
@@ -113,21 +108,71 @@ export default function Home() {
       });
       
       const data = await response.json();
-      // Check if we have valid data before setting
-if (data && data.candidates && Array.isArray(data.candidates)) {
-  setFilteredCandidates(data.candidates);
-} else {
-  // Fallback to all candidates if response is invalid
-  if (candidates) {
-    setFilteredCandidates(candidates);
-    }
-   } 
-  } catch (error) {
+      if (data && data.candidates && Array.isArray(data.candidates)) {
+        setFilteredCandidates(data.candidates);
+      } else {
+        if (candidates) {
+          setFilteredCandidates(candidates);
+        }
+      }
+    } catch (error) {
       console.error('Filter error:', error);
-      // On error, show all candidates
       if (candidates) {
         setFilteredCandidates(candidates);
       }
+    }
+  };
+
+  // ✅ NEW - Export Filtered Candidates to Excel
+  const handleExportFiltered = async () => {
+    if (filteredCandidates.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "Please select candidates first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      // Send filtered candidate IDs to backend
+      const candidateIds = filteredCandidates.map(c => c.id);
+      
+      const response = await fetch('/api/export-filtered', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateIds }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `filtered-candidates-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "✅ Export successful",
+        description: `Exported ${filteredCandidates.length} candidates to Excel`,
+      });
+    } catch (error) {
+      toast({
+        title: "❌ Export failed",
+        description: error instanceof Error ? error.message : "Could not export data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -208,7 +253,7 @@ if (data && data.candidates && Array.isArray(data.candidates)) {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card className="hover-elevate">
           <CardHeader>
             <CardTitle>Manual Extraction</CardTitle>
@@ -240,25 +285,25 @@ if (data && data.candidates && Array.isArray(data.candidates)) {
             </Link>
           </CardContent>
         </Card>
-        {/* NEW - Bulk Upload with Filter */}
-  <Card className="hover-elevate">
-    <CardHeader>
-      <CardTitle>Bulk Upload & Filter</CardTitle>
-      <p className="text-sm text-muted-foreground">
-        Upload multiple resumes and automatically filter based on your recruitment criteria
-      </p>
-    </CardHeader>
-    <CardContent>
-      <Link href="/bulk-upload">
-        <Button className="w-full" variant="default">
-          Bulk Upload with Filter
-        </Button>
-      </Link>
-    </CardContent>
-  </Card>
+
+        <Card className="hover-elevate">
+          <CardHeader>
+            <CardTitle>Bulk Upload & Filter</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Upload multiple resumes and automatically filter based on your recruitment criteria
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Link href="/bulk-upload">
+              <Button className="w-full" variant="default">
+                Bulk Upload with Filter
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* ✅ NEW - Candidate Filter Component */}
+      {/* Candidate Filter Component */}
       {!loadingCandidates && candidates && candidates.length > 0 && (
         <div className="mb-8">
           <CandidateFilter
@@ -273,18 +318,34 @@ if (data && data.candidates && Array.isArray(data.candidates)) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Recent Uploads</CardTitle>
-          {stats.totalCandidates > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteAll}
-              disabled={deleteAllMutation.isPending}
-              className="gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete All
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {/* ✅ NEW - Export Filtered Button */}
+            {filteredCandidates.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportFiltered}
+                disabled={isExporting}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {isExporting ? 'Exporting...' : `Export Filtered (${filteredCandidates.length})`}
+              </Button>
+            )}
+            
+            {stats.totalCandidates > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAll}
+                disabled={deleteAllMutation.isPending}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete All
+              </Button>
+            )}
+          </div>
         </CardHeader>
 
         <CardContent>
@@ -308,7 +369,6 @@ if (data && data.candidates && Array.isArray(data.candidates)) {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* ✅ CHANGED - Using filteredCandidates instead of candidates */}
                   {filteredCandidates.slice(0, 5).map((candidate) => (
                     <tr
                       key={candidate.id}

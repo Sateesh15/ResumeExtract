@@ -688,6 +688,213 @@ app.post("/api/candidates/filter", async (req: Request, res: Response) => {
   }
 });
 
+// ✅ FIXED - POST /api/export-filtered - Export filtered candidates to Excel
+app.post("/api/export-filtered", async (req: Request, res: Response) => {
+  try {
+    const { candidateIds } = req.body;
+
+    if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+      return res.status(400).json({ error: "No candidate IDs provided" });
+    }
+
+    // Fetch only the filtered candidates
+    const allCandidates = await storage.getCandidates();
+    const filteredCandidates = allCandidates.filter(c => candidateIds.includes(c.id));
+
+    if (filteredCandidates.length === 0) {
+      return res.status(404).json({ error: "No matching candidates found" });
+    }
+
+    // Create Excel workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Filtered Candidates", {
+      properties: { tabColor: { argb: "FF21808D" } },
+    });
+
+    // Define columns
+    worksheet.columns = [
+      { header: "Full Name", key: "fullName", width: 25 },
+      { header: "Email", key: "email", width: 30 },
+      { header: "Phone", key: "phone", width: 18 },
+      { header: "Current Position", key: "currentPosition", width: 30 },
+      { header: "Current Company", key: "currentCompany", width: 30 },
+      { header: "Previous Company", key: "previousCompany", width: 30 },
+      { header: "Total Experience", key: "totalExperience", width: 18 },
+      { header: "Skills", key: "skills", width: 50 },
+      { header: "Certifications", key: "certifications", width: 40 },
+      { header: "LinkedIn", key: "linkedin", width: 40 },
+      { header: "GitHub", key: "github", width: 40 },
+      { header: "Portfolio", key: "portfolio", width: 40 },
+      { header: "Summary", key: "summary", width: 60 },
+      { header: "Confidence", key: "confidence", width: 12 },
+      { header: "Source File", key: "sourceFile", width: 30 },
+      { header: "Extracted At", key: "extractedAt", width: 20 },
+    ];
+
+    // Style header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF21808D" },
+    };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+    headerRow.height = 25;
+
+    // Helper function to extract URLs (you may need to add this if not present)
+    const extractUrls = (text: string | null) => {
+      if (!text) return { linkedin: null, github: null, portfolio: null };
+      
+      const linkedinMatch = text.match(/linkedin\.com\/in\/[\w-]+/i);
+      const githubMatch = text.match(/github\.com\/[\w-]+/i);
+      
+      return {
+        linkedin: linkedinMatch ? `https://${linkedinMatch[0]}` : null,
+        github: githubMatch ? `https://${githubMatch[0]}` : null,
+        portfolio: null, // Add portfolio detection if needed
+      };
+    };
+
+    // Helper function to calculate total experience (you may need to add this if not present)
+    // const calculateTotalExperience = (candidate: any) => {
+    //   if (!candidate.experience || candidate.experience.length === 0) return "0 years";
+      
+    //   let totalMonths = 0;
+    //   candidate.experience.forEach((exp: any) => {
+    //     if (exp.startDate && exp.endDate) {
+    //       const start = new Date(exp.startDate);
+    //       const end = exp.current ? new Date() : new Date(exp.endDate);
+    //       const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    //       totalMonths += Math.max(0, months);
+    //     }
+    //   });
+      
+    //   const years = Math.floor(totalMonths / 12);
+    //   const months = totalMonths % 12;
+    //   return months > 0 ? `${years}.${months} years` : `${years} years`;
+    // };
+
+
+    // Add data rows
+    filteredCandidates.forEach((candidate, index) => {
+      const urls = extractUrls(candidate.rawText || null);
+      const totalExp = calculateTotalExperience(candidate);
+      const currentJob = candidate.experience?.[0];
+      const previousJob = candidate.experience?.[1];
+
+      const row = worksheet.addRow({
+        fullName: candidate.fullName || "N/A",
+        email: candidate.emails?.[0] || "N/A",
+        phone: candidate.phones?.[0] || "N/A",
+        currentPosition: currentJob?.title || "N/A",
+        currentCompany: currentJob?.company || "N/A",
+        previousCompany: previousJob?.company || "N/A",
+        totalExperience: totalExp,
+        skills: candidate.skills?.join(", ") || "N/A",
+        certifications:
+          candidate.certifications
+            ?.map((cert) => cert.name)
+            .join(", ") || "N/A",
+        linkedin: urls.linkedin || "N/A",
+        github: urls.github || "N/A",
+        portfolio: urls.portfolio || "N/A",
+        summary: candidate.summary || "N/A",
+        confidence: candidate.confidence?.overall
+          ? `${(candidate.confidence.overall * 100).toFixed(0)}%`
+          : "N/A",
+        sourceFile: candidate.sourceFile || "N/A",
+        extractedAt: new Date(candidate.extractedAt).toLocaleString(),
+      });
+
+      // Alternating row colors
+      if (index % 2 === 0) {
+        row.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF5F5F5" },
+        };
+      }
+
+      row.alignment = { vertical: "top", wrapText: true };
+      row.height = 30;
+
+      // Make URLs clickable
+      if (urls.linkedin && urls.linkedin !== "N/A") {
+        const linkedinCell = row.getCell("linkedin");
+        linkedinCell.value = {
+          text: urls.linkedin,
+          hyperlink: urls.linkedin,
+        };
+        linkedinCell.font = { color: { argb: "FF0066CC" }, underline: true };
+      }
+
+      if (urls.github && urls.github !== "N/A") {
+        const githubCell = row.getCell("github");
+        githubCell.value = {
+          text: urls.github,
+          hyperlink: urls.github,
+        };
+        githubCell.font = { color: { argb: "FF0066CC" }, underline: true };
+      }
+
+      if (urls.portfolio && urls.portfolio !== "N/A") {
+        const portfolioCell = row.getCell("portfolio");
+        portfolioCell.value = {
+          text: urls.portfolio,
+          hyperlink: urls.portfolio,
+        };
+        portfolioCell.font = { color: { argb: "FF0066CC" }, underline: true };
+      }
+    });
+
+    // Add borders
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD0D0D0" } },
+          left: { style: "thin", color: { argb: "FFD0D0D0" } },
+          bottom: { style: "thin", color: { argb: "FFD0D0D0" } },
+          right: { style: "thin", color: { argb: "FFD0D0D0" } },
+        };
+      });
+    });
+
+    // Freeze header
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+
+    // Auto-filter
+    worksheet.autoFilter = {
+      from: "A1",
+      to: "P1",
+    };
+
+    // ✅ FIXED - Set headers ONCE, then write directly to response
+    const filename = `filtered-candidates-${new Date().toISOString().split("T")[0]}.xlsx`;
+    
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`
+    );
+
+    // Write workbook to response and end
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Error exporting filtered data:", error);
+    
+    // ✅ IMPORTANT: Only send error if headers haven't been sent
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to export filtered data" });
+    }
+  }
+});
+
+
 // ✅ POST /api/candidates/bulk-upload-filter - Bulk upload with filtering
 app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request, res: Response) => {
   try {
