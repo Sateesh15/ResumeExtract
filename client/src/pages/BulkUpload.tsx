@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 export default function BulkUpload() {
   const [, setLocation] = useLocation(); // ✅ FIXED: Use useLocation instead of useNavigate
@@ -15,21 +17,61 @@ export default function BulkUpload() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
   const [skillsMatchMode, setSkillsMatchMode] = useState<'AND' | 'OR'>('AND');
+  const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [position, setPosition] = useState('');
   const [minExperience, setMinExperience] = useState(0);
   const [maxExperience, setMaxExperience] = useState(50);
+
+  // Common tech skills database
+  const commonSkills = [
+    'Java', 'JavaScript', 'TypeScript', 'Python', 'C++', 'C#', 'Go', 'Rust', 'PHP', 'Ruby',
+    'Spring Boot', 'Spring', 'Spring MVC', 'Spring Security', 'Spring Data JPA',
+    'React', 'React Native', 'Vue.js', 'Angular', 'Svelte', 'Next.js', 'Nuxt.js',
+    'Node.js', 'Express.js', 'Nest.js', 'Django', 'Flask', 'FastAPI', 'Laravel',
+    'MySQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Oracle', 'SQL Server', 'SQLite',
+    'AWS', 'Azure', 'Google Cloud', 'Docker', 'Kubernetes', 'Jenkins', 'GitLab CI',
+    'REST API', 'GraphQL', 'Microservices', 'API Development', 'Web Services',
+    'HTML', 'CSS', 'Sass', 'Tailwind CSS', 'Bootstrap', 'Material UI',
+    'Git', 'GitHub', 'Bitbucket', 'Jira', 'Confluence',
+    'JUnit', 'Jest', 'Mocha', 'Selenium', 'Cypress', 'Postman',
+    'Agile', 'Scrum', 'Kanban', 'CI/CD', 'DevOps',
+    'Machine Learning', 'Deep Learning', 'TensorFlow', 'PyTorch', 'Pandas', 'NumPy',
+    'Android', 'iOS', 'Swift', 'Kotlin', 'Flutter', 'Xamarin',
+    'Testing', 'QA', 'Test Automation', 'Manual Testing', 'API Testing',
+    'Linux', 'Unix', 'Windows Server', 'Bash', 'PowerShell',
+  ].sort();
   
   // Upload state
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [results, setResults] = useState<any>(null);
 
-  const handleAddSkill = () => {
-    if (skillInput.trim() && !skills.includes(skillInput.trim())) {
-      setSkills([...skills, skillInput.trim()]);
+    const handleAddSkill = (skill?: string) => {
+    const skillToAdd = skill || skillInput.trim();
+    if (skillToAdd && !skills.includes(skillToAdd)) {
+      setSkills([...skills, skillToAdd]);
       setSkillInput('');
+      setShowSuggestions(false);
     }
   };
+
+  const handleSkillInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSkillInput(value);
+    
+    if (value.trim()) {
+      const filtered = commonSkills.filter(skill => 
+        skill.toLowerCase().includes(value.toLowerCase()) &&
+        !skills.includes(skill)
+      );
+      setFilteredSuggestions(filtered);
+      setShowSuggestions(filtered.length > 0);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
 
   const handleRemoveSkill = (skill: string) => {
     setSkills(skills.filter(s => s !== skill));
@@ -113,56 +155,104 @@ export default function BulkUpload() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Skills */}
-              <div>
-                <Label>Required Skills</Label>
-                <div className="flex gap-2 mb-2">
-                  <Input
-                    value={skillInput}
-                    onChange={(e) => setSkillInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddSkill()}
-                    placeholder="Type a skill..."
-                  />
-                  <Button onClick={handleAddSkill}>Add</Button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {skills.map(skill => (
-                    <span
-                      key={skill}
-                      className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2"
-                    >
-                      {skill}
-                      <button onClick={() => handleRemoveSkill(skill)}>×</button>
-                    </span>
-                  ))}
-                </div>
-                {skills.length > 0 && (
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant={skillsMatchMode === 'AND' ? 'default' : 'outline'}
-                      onClick={() => setSkillsMatchMode('AND')}
-                    >
-                      Match ALL
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={skillsMatchMode === 'OR' ? 'default' : 'outline'}
-                      onClick={() => setSkillsMatchMode('OR')}
-                    >
-                      Match ANY
-                    </Button>
-                  </div>
-                )}
-              </div>
+             
+             <div className="relative">
+  <Label>Required Skills</Label>
 
-              {/* Position */}
+  <div className="flex gap-2 mb-2 relative">
+    <Input
+      value={skillInput}
+      onChange={handleSkillInputChange}
+      onFocus={() => setShowSuggestions(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleAddSkill();
+        }
+      }}
+      placeholder="Type a skill..."
+    />
+    <Button type="button" onClick={() => handleAddSkill()}>
+      Add
+    </Button>
+  </div>
+
+  {/* 🔽 Suggestions Dropdown */}
+  {showSuggestions && filteredSuggestions.length > 0 && (
+    <div className="absolute bg-white border rounded shadow w-full max-h-48 overflow-y-auto z-20 mt-1">
+      {filteredSuggestions.map((skill, index) => (
+        <div
+          key={index}
+          className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+          onClick={() => handleAddSkill(skill)}
+        >
+          {skill}
+        </div>
+      ))}
+    </div>
+  )}
+
+  {/* Selected Skill Chips */}
+  <div className="flex flex-wrap gap-2 mt-2">
+    {skills.map(skill => (
+      <span
+        key={skill}
+        className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2"
+      >
+        {skill}
+        <button onClick={() => handleRemoveSkill(skill)}>×</button>
+      </span>
+    ))}
+  </div>
+
+  {skills.length > 0 && (
+    <div className="mt-2 flex gap-2">
+      <Button
+        size="sm"
+        variant={skillsMatchMode === "AND" ? "default" : "outline"}
+        onClick={() => setSkillsMatchMode("AND")}
+      >
+        Match ALL
+      </Button>
+      <Button
+        size="sm"
+        variant={skillsMatchMode === "OR" ? "default" : "outline"}
+        onClick={() => setSkillsMatchMode("OR")}
+      >
+        Match ANY
+      </Button>
+    </div>
+  )}
+</div>
+
+                            {/* Position */}
               <div>
                 <Label>Position/Role</Label>
-                <Input
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value)}
-                  placeholder="e.g., Software Engineer"
-                />
+                <Select value={position} onValueChange={setPosition}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a position or leave empty for all" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Positions</SelectItem>
+                    <SelectItem value="Software Engineer">Software Engineer</SelectItem>
+                    <SelectItem value="Senior Software Engineer">Senior Software Engineer</SelectItem>
+                    <SelectItem value="Full Stack Developer">Full Stack Developer</SelectItem>
+                    <SelectItem value="Frontend Developer">Frontend Developer</SelectItem>
+                    <SelectItem value="Backend Developer">Backend Developer</SelectItem>
+                    <SelectItem value="DevOps Engineer">DevOps Engineer</SelectItem>
+                    <SelectItem value="QA Engineer">QA Engineer</SelectItem>
+                    <SelectItem value="Test Engineer">Test Engineer</SelectItem>
+                    <SelectItem value="Quality Analyst">Quality Analyst</SelectItem>
+                    <SelectItem value="Data Engineer">Data Engineer</SelectItem>
+                    <SelectItem value="Data Scientist">Data Scientist</SelectItem>
+                    <SelectItem value="Machine Learning Engineer">Machine Learning Engineer</SelectItem>
+                    <SelectItem value="UI/UX Designer">UI/UX Designer</SelectItem>
+                    <SelectItem value="Product Manager">Product Manager</SelectItem>
+                    <SelectItem value="Solutions Architect">Solutions Architect</SelectItem>
+                    <SelectItem value="Tech Lead">Tech Lead</SelectItem>
+                    <SelectItem value="Engineering Manager">Engineering Manager</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Experience Range */}
