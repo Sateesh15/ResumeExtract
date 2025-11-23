@@ -4,11 +4,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { FileText, Home as HomeIcon, Wand2, BrainCircuit } from "lucide-react";
+import { FileText, Home as HomeIcon, Wand2, BrainCircuit ,Upload } from "lucide-react";
 import Home from "@/pages/Home";
 import ManualExtractor from "@/pages/ManualExtractor";
 import AIExtractor from "@/pages/AIExtractor";
 import NotFound from "@/pages/not-found";
+import BulkUpload from './pages/BulkUpload';
 
 function Navigation() {
   const [location] = useLocation();
@@ -54,6 +55,16 @@ function Navigation() {
               AI Extractor
             </Button>
           </Link>
+          <Link href="/bulk-upload">
+            <Button
+              variant={isActive("/bulk-upload") ? "default" : "ghost"}
+              className="gap-2"
+              data-testid="nav-ai"
+            >
+              <Upload  className="h-4 w-4" />
+              bulk upload
+            </Button>
+          </Link>
         </div>
       </div>
     </nav>
@@ -66,6 +77,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/manual" component={ManualExtractor} />
       <Route path="/ai" component={AIExtractor} />
+      <Route path="/bulk-upload" component={BulkUpload} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -240,6 +240,22 @@ if (data && data.candidates && Array.isArray(data.candidates)) {
             </Link>
           </CardContent>
         </Card>
+        {/* NEW - Bulk Upload with Filter */}
+  <Card className="hover-elevate">
+    <CardHeader>
+      <CardTitle>Bulk Upload & Filter</CardTitle>
+      <p className="text-sm text-muted-foreground">
+        Upload multiple resumes and automatically filter based on your recruitment criteria
+      </p>
+    </CardHeader>
+    <CardContent>
+      <Link href="/bulk-upload">
+        <Button className="w-full" variant="default">
+          Bulk Upload with Filter
+        </Button>
+      </Link>
+    </CardContent>
+  </Card>
       </div>
 
       {/* ✅ NEW - Candidate Filter Component */}

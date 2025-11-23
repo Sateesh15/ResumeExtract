@@ -688,6 +688,116 @@ app.post("/api/candidates/filter", async (req: Request, res: Response) => {
   }
 });
 
+// ✅ POST /api/candidates/bulk-upload-filter - Bulk upload with filtering
+app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    // Get filter criteria from request body
+    const filterCriteria: FilterCriteria = {
+      skills: req.body.skills ? JSON.parse(req.body.skills) : [],
+      skillsMatchMode: req.body.skillsMatchMode || 'AND',
+      position: req.body.position || '',
+      minExperience: req.body.minExperience ? parseInt(req.body.minExperience) : undefined,
+      maxExperience: req.body.maxExperience ? parseInt(req.body.maxExperience) : undefined,
+    };
+
+    const results = [];
+    let matchedCount = 0;
+    let rejectedCount = 0;
+
+    // Process each file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      try {
+        // Extract text from PDF
+        const processed = await processFile(file.buffer, file.originalname, file.mimetype);
+        
+        // Extract candidate data using AI
+        const extracted = await extractResumeData(processed.text, file.originalname);
+        
+        // Create temporary candidate object for filtering
+        const tempCandidate = {
+          ...extracted,
+          rawText: processed.text,
+          attachments: processed.attachments,
+          sourceFile: file.originalname,
+        };
+
+        // Check if candidate matches filter criteria
+        const matches = filterCandidates(
+          [tempCandidate] as any,
+          filterCriteria,
+          calculateTotalExperience
+        );
+
+        if (matches.length > 0) {
+          // Candidate matches - save to database
+          const candidate = await storage.createCandidate({
+            fullName: extracted.fullName,
+            emails: extracted.emails,
+            phones: extracted.phones,
+            summary: extracted.summary,
+            education: extracted.education,
+            experience: extracted.experience,
+            skills: extracted.skills,
+            certifications: extracted.certifications,
+            attachments: processed.attachments,
+            sourceFile: file.originalname,
+            extractionMode: "ai",
+            flagged: false,
+            rawText: processed.text,
+            confidence: extracted.confidence,
+          });
+
+          results.push({
+            filename: file.originalname,
+            status: 'matched',
+            candidate: candidate,
+          });
+          matchedCount++;
+        } else {
+          // Candidate doesn't match - don't save
+          results.push({
+            filename: file.originalname,
+            status: 'rejected',
+            reason: 'Did not meet filter criteria',
+          });
+          rejectedCount++;
+        }
+      } catch (error) {
+        results.push({
+          filename: file.originalname,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Processing failed',
+        });
+        rejectedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      total: files.length,
+      matched: matchedCount,
+      rejected: rejectedCount,
+      results: results,
+      filterCriteria: filterCriteria,
+    });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res.status(500).json({ 
+      error: "Failed to process bulk upload",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+
   // GET /api/candidates/:id - Get single candidate
   app.get("/api/candidates/:id", async (req, res) => {
     try {
