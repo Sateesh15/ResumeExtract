@@ -30,32 +30,15 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false }));
 
-const jwtCheck = jwt({
-  secret: jwksRsa.expressJwtSecret({
-    jwksUri: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/discovery/v2.0/keys`
-  }),
-  audience: "5b21943f-59c2-4cf9-ad62-056b6302e168",
-  issuer: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/v2.0`,
-  algorithms: ["RS256"],
-});
-
-// Apply JWT to /api but allow some public routes (uploads, extraction) without a token.
-// Edit the `path` array to add/remove endpoints that should be publicly accessible.
 app.use(
   "/api",
-  (jwtCheck as any).unless({
-    // Note: this middleware is mounted at "/api" so paths must be relative
-    path: [
-      "/upload",
-      "/extract",
-      /\/extract\/.*/,
-      "/extract/ai",
-      "/extract/manual",
-      "/login",
-      "/public",
-      // allow CORS preflight without token
-      { url: /.*/, methods: ["OPTIONS"] },
-    ],
+  jwt({
+    secret: jwksRsa.expressJwtSecret({
+      jwksUri: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/discovery/v2.0/keys`
+    }),
+    audience: "5b21943f-59c2-4cf9-ad62-056b6302e168",
+    issuer: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/v2.0`,
+    algorithms: ["RS256"],
   })
 );
 
@@ -92,20 +75,12 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Global error handler - return proper HTTP responses and do not rethrow errors.
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    // Handle express-jwt UnauthorizedError cleanly
-    if (err && err.name === "UnauthorizedError") {
-      console.warn("Authentication error:", err.message || err);
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    console.error(err);
     res.status(status).json({ message });
-    // don't rethrow - allow server to continue running
+    throw err;
   });
 
   // importantly only setup vite in development and after
