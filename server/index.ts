@@ -5,8 +5,18 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
+import { expressjwt as jwt } from "express-jwt";
+import * as jwksRsa from "jwks-rsa";
+
 
 const app = express();
+
+declare module "express" {
+  export interface Request {
+    auth?: any; // Auth info injected by express-jwt
+  }
+}
+
 
 declare module 'http' {
   interface IncomingMessage {
@@ -19,6 +29,35 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false }));
+
+const jwtCheck = jwt({
+  secret: jwksRsa.expressJwtSecret({
+    jwksUri: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/discovery/v2.0/keys`
+  }),
+  audience: "5b21943f-59c2-4cf9-ad62-056b6302e168",
+  issuer: `https://login.microsoftonline.com/604aebc4-9926-4009-9333-43f333827c56/v2.0`,
+  algorithms: ["RS256"],
+});
+
+// Apply JWT to /api but allow some public routes (uploads, extraction) without a token.
+// Edit the `path` array to add/remove endpoints that should be publicly accessible.
+app.use(
+  "/api",
+  (jwtCheck as any).unless({
+    // Note: this middleware is mounted at "/api" so paths must be relative
+    path: [
+      "/upload",
+      "/extract",
+      /\/extract\/.*/,
+      "/extract/ai",
+      "/extract/manual",
+      "/login",
+      "/public",
+      // allow CORS preflight without token
+      { url: /.*/, methods: ["OPTIONS"] },
+    ],
+  })
+);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -53,12 +92,20 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Global error handler - return proper HTTP responses and do not rethrow errors.
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    // Handle express-jwt UnauthorizedError cleanly
+    if (err && err.name === "UnauthorizedError") {
+      console.warn("Authentication error:", err.message || err);
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    console.error(err);
     res.status(status).json({ message });
-    throw err;
+    // don't rethrow - allow server to continue running
   });
 
   // importantly only setup vite in development and after
@@ -69,6 +116,14 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
+
+  app.get("/api/secure-info", (req: Request, res: Response) => {
+  const email = (req.auth && req.auth.preferred_username) || "";
+  if (!email.endsWith("@iwebte.com")) return res.status(403).send("Forbidden");
+  res.json({ message: `Hello ${email}!` });
+});
+
+
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.

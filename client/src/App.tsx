@@ -11,6 +11,30 @@ import AIExtractor from "@/pages/AIExtractor";
 import NotFound from "@/pages/not-found";
 import BulkUpload from './pages/BulkUpload';
 
+import { PublicClientApplication } from "@azure/msal-browser";
+import { MsalProvider, useIsAuthenticated, useMsal } from "@azure/msal-react";
+import { msalConfig } from "./msalConfig";
+import Login from "./pages/Login"; 
+import { ReactNode } from "react";
+
+const msalInstance = new PublicClientApplication(msalConfig);
+
+
+function AuthGate({ children }: { children: ReactNode }) {
+  const isAuthenticated = useIsAuthenticated();
+  const { accounts } = useMsal();
+  const email = accounts[0]?.username || "";
+  if (!isAuthenticated) return <Login />;
+  if (!email.endsWith("@iwebte.com"))
+    return (
+      <div style={{ textAlign: "center", marginTop: 80, color: "red" }}>
+        <h2>Access denied</h2>
+        <p>This portal is for @iwebte.com users only.</p>
+      </div>
+    );
+  return <>{children}</>;
+}
+
 function Navigation() {
   const [location] = useLocation();
 
@@ -85,17 +109,21 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <div className="min-h-screen flex flex-col">
-          <Navigation />
-          <main className="flex-1">
-            <Router />
-          </main>
-        </div>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <MsalProvider instance={msalInstance}>
+      <AuthGate>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <div className="min-h-screen flex flex-col">
+              <Navigation />
+              <main className="flex-1">
+                <Router />
+              </main>
+            </div>
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </AuthGate>
+    </MsalProvider>
   );
 }
 

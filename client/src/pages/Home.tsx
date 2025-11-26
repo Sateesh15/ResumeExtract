@@ -1,6 +1,3 @@
-import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,8 +5,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Users, CheckCircle, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
-import { CandidateFilter } from '@/components/CandidateFilter';
-import { useState, useEffect } from 'react';
 
 export default function Home() {
   const { data: candidates, isLoading: loadingCandidates } = useQuery<Candidate[]>({
@@ -20,160 +15,11 @@ export default function Home() {
     queryKey: ["/api/jobs"],
   });
 
-  const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([]);
-  const [isExporting, setIsExporting] = useState(false);
-
-  useEffect(() => {
-    if (candidates) {
-      setFilteredCandidates(candidates);
-    }
-  }, [candidates]);
-
   const stats = {
     totalCandidates: candidates?.length || 0,
     flaggedCandidates: candidates?.filter((c) => c.flagged).length || 0,
     completedJobs: jobs?.filter((j) => j.status === "completed").length || 0,
     processingJobs: jobs?.filter((j) => j.status === "processing").length || 0,
-  };
-
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/candidates/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "✅ Deleted",
-        description: "Candidate has been removed.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "❌ Delete failed",
-        description: "Could not delete candidate.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteAllMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/candidates", {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete all");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "✅ All deleted",
-        description: `${data.deletedCount} candidates removed.`,
-      });
-    },
-    onError: () => {
-      toast({
-        title: "❌ Delete failed",
-        description: "Could not delete candidates.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleDeleteOne = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this candidate?")) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const handleDeleteAll = () => {
-    if (window.confirm("⚠️ Are you sure? This will delete ALL candidates!")) {
-      deleteAllMutation.mutate();
-    }
-  };
-
-  const handleFilterChange = async (criteria: any) => {
-    try {
-      const response = await fetch('/api/candidates/filter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(criteria),
-      });
-      
-      const data = await response.json();
-      if (data && data.candidates && Array.isArray(data.candidates)) {
-        setFilteredCandidates(data.candidates);
-      } else {
-        if (candidates) {
-          setFilteredCandidates(candidates);
-        }
-      }
-    } catch (error) {
-      console.error('Filter error:', error);
-      if (candidates) {
-        setFilteredCandidates(candidates);
-      }
-    }
-  };
-
-  // ✅ NEW - Export Filtered Candidates to Excel
-  const handleExportFiltered = async () => {
-    if (filteredCandidates.length === 0) {
-      toast({
-        title: "No data to export",
-        description: "Please select candidates first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsExporting(true);
-
-    try {
-      // Send filtered candidate IDs to backend
-      const candidateIds = filteredCandidates.map(c => c.id);
-      
-      const response = await fetch('/api/export-filtered', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidateIds }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Export failed');
-      }
-
-      // Download the file
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `filtered-candidates-${new Date().toISOString().split('T')[0]}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast({
-        title: "✅ Export successful",
-        description: `Exported ${filteredCandidates.length} candidates to Excel`,
-      });
-    } catch (error) {
-      toast({
-        title: "❌ Export failed",
-        description: error instanceof Error ? error.message : "Could not export data",
-        variant: "destructive",
-      });
-    } finally {
-      setIsExporting(false);
-    }
   };
 
   return (
@@ -253,7 +99,7 @@ export default function Home() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <Card className="hover-elevate">
           <CardHeader>
             <CardTitle>Manual Extraction</CardTitle>
@@ -285,69 +131,13 @@ export default function Home() {
             </Link>
           </CardContent>
         </Card>
-
-        <Card className="hover-elevate">
-          <CardHeader>
-            <CardTitle>Bulk Upload & Filter</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Upload multiple resumes and automatically filter based on your recruitment criteria
-            </p>
-          </CardHeader>
-          <CardContent>
-            <Link href="/bulk-upload">
-              <Button className="w-full" variant="default">
-                Bulk Upload with Filter
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
       </div>
-
-      {/* Candidate Filter Component */}
-      {!loadingCandidates && candidates && candidates.length > 0 && (
-        <div className="mb-8">
-          <CandidateFilter
-            onFilterChange={handleFilterChange}
-            totalCount={candidates?.length || 0}
-            filteredCount={filteredCandidates.length}
-          />
-        </div>
-      )}
 
       {/* Recent Uploads Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>Recent Uploads</CardTitle>
-          <div className="flex gap-2">
-            {/* ✅ NEW - Export Filtered Button */}
-            {filteredCandidates.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportFiltered}
-                disabled={isExporting}
-                className="gap-2"
-              >
-                <Download className="h-4 w-4" />
-                {isExporting ? 'Exporting...' : `Export Filtered (${filteredCandidates.length})`}
-              </Button>
-            )}
-            
-            {stats.totalCandidates > 0 && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDeleteAll}
-                disabled={deleteAllMutation.isPending}
-                className="gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete All
-              </Button>
-            )}
-          </div>
         </CardHeader>
-
         <CardContent>
           {loadingCandidates ? (
             <div className="space-y-3">
@@ -355,7 +145,7 @@ export default function Home() {
                 <Skeleton key={i} className="h-14 w-full" />
               ))}
             </div>
-          ) : filteredCandidates && filteredCandidates.length > 0 ? (
+          ) : candidates && candidates.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full" data-testid="table-recent-uploads">
                 <thead className="border-b">
@@ -369,7 +159,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCandidates.slice(0, 5).map((candidate) => (
+                  {candidates.slice(0, 5).map((candidate) => (
                     <tr
                       key={candidate.id}
                       className="border-b hover-elevate"
@@ -400,23 +190,12 @@ export default function Home() {
                           {new Date(candidate.extractedAt).toLocaleDateString()}
                         </p>
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="flex gap-2 justify-end">
-                          <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
-                            <Button size="sm" variant="outline">
-                              View
-                            </Button>
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteOne(candidate.id)}
-                            disabled={deleteMutation.isPending}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
+                      <td className="py-3 px-4 text-right">
+                        <Link href={candidate.extractionMode === "ai" ? "/ai" : "/manual"}>
+                          <Button size="sm" variant="outline" data-testid={`button-view-recent-${candidate.id}`}>
+                            View
                           </Button>
-                        </div>
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -426,7 +205,7 @@ export default function Home() {
           ) : (
             <div className="text-center py-8 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>No candidates match your filter criteria</p>
+              <p>No candidates yet. Start extracting resumes to see them here.</p>
             </div>
           )}
         </CardContent>
