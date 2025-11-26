@@ -8,6 +8,6 @@ export const msalConfig = {
   }
 };
 
-export const loginRequest = { scopes: ["openid", "profile", "email", "5b21943f-59c2-4cf9-ad62-056b6302e168/.default"] };
+export const loginRequest = { scopes: ["openid", "profile", "email", "api://5b21943f-59c2-4cf9-ad62-056b6302e168/access_as_user"] };
 
 export const msalInstance = new PublicClientApplication(msalConfig);
