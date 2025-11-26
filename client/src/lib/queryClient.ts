@@ -1,4 +1,26 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { msalInstance, loginRequest } from "@/msalConfig";
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
+
+async function getAccessToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) {
+    throw new Error("No active account! Please log in.");
+  }
+
+  const response = await msalInstance.acquireTokenSilent({
+    ...loginRequest,
+    account,
+  }).catch(async (error) => {
+    if (error instanceof InteractionRequiredAuthError) {
+      return msalInstance.acquireTokenRedirect(loginRequest);
+    }
+    throw error;
+  });
+
+  return response?.accessToken;
+}
+
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -12,11 +34,25 @@ export async function apiRequest(
   url: string,
   data?: unknown
 ): Promise<Response> {
+  const accessToken = await getAccessToken();
+  const headers: HeadersInit = {};
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  let body: BodyInit | undefined;
+  if (data instanceof FormData) {
+    body = data;
+  } else if (data) {
+    body = JSON.stringify(data);
+    headers["Content-Type"] = "application/json";
+  }
+
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    headers,
+    body,
   });
 
   await throwIfResNotOk(res);
@@ -31,8 +67,14 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const accessToken = await getAccessToken();
+    const headers: HeadersInit = {};
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
     const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
