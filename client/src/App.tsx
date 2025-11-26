@@ -11,14 +11,10 @@ import AIExtractor from "@/pages/AIExtractor";
 import NotFound from "@/pages/not-found";
 import BulkUpload from './pages/BulkUpload';
 
-import { PublicClientApplication } from "@azure/msal-browser";
 import { MsalProvider, useIsAuthenticated, useMsal } from "@azure/msal-react";
-import { msalConfig } from "./msalConfig";
+import { msalInstance } from "./msalConfig";
 import Login from "./pages/Login"; 
 import { ReactNode } from "react";
-
-const msalInstance = new PublicClientApplication(msalConfig);
-
 
 function AuthGate({ children }: { children: ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
@@ -91,6 +87,9 @@ function Navigation() {
           </Link>
         </div>
       </div>
+      <Button variant="ghost" onClick={() => msalInstance.logoutRedirect()}>
+        Logout
+      </Button>
     </nav>
   );
 }

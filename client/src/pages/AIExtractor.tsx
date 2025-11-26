@@ -79,23 +79,17 @@ export default function AIExtractor() {
 const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   mutationFn: async (files: File[]): Promise<UploadResponse> => {
     const formData = new FormData();
-    files.forEach((file) => formData.append("file", file)); // ✅ Use "file" not "files"
+    files.forEach((file) => formData.append("file", file));
     formData.append("mode", "ai");
     formData.append("autoExtract", autoExtract.toString());
 
-    // ✅ Use fetch directly, NOT apiRequest
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: formData, // ✅ FormData is sent directly
-      // DO NOT set Content-Type header - browser will set it automatically
-    });
+    // apiRequest returns Response
+    const res: Response = await apiRequest("POST", "/api/upload", formData);
 
-    if (!res.ok) {
-      throw new Error(`Upload failed: ${res.status}`);
-    }
-
+    // You MUST convert to JSON here
     const data = (await res.json()) as UploadResponse;
-    return data;
+
+    return data; // React Query receives UploadResponse
   },
 
   onSuccess: (data) => {
