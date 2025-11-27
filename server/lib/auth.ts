@@ -6,7 +6,19 @@ const TENANT_ID = process.env.AZURE_TENANT_ID || "604aebc4-9926-4009-9333-43f333
 const CLIENT_ID = process.env.AZURE_CLIENT_ID || "5b21943f-59c2-4cf9-ad62-056b6302e168";
 const ALLOWED_DOMAIN = "@iwebte.com";
 
-// ✅ FIXED: Accept multiple audience formats
+
+// ✅ Extend Express Request type to include user and userInfo
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any;
+      userInfo?: any;
+      userEmail?: string;
+    }
+  }
+}
+
+// ✅ FIXED: Accept both v1.0 and v2.0 issuer formats
 export const checkJwt = jwt({
   secret: jwksRsa.expressJwtSecret({
     cache: true,
@@ -18,7 +30,11 @@ export const checkJwt = jwt({
     `api://${CLIENT_ID}`,
     `https://${CLIENT_ID}`,
   ],
-  issuer: `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,
+  issuer: [
+    // ✅ NEW: Accept both issuer formats
+    `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,  // v2.0 endpoint
+    `https://sts.windows.net/${TENANT_ID}/`,                // v1.0 endpoint (for exposed scopes)
+  ],
   algorithms: ["RS256"],
 });
 
@@ -42,11 +58,43 @@ export const checkJwtWithLogging = (req: Request, res: Response, next: NextFunct
     (checkJwt as any)(req, res, (err: any) => {
       if (err) {
         console.error(`[auth] JWT verification failed: ${err && err.message ? err.message : err}`);
+        // Decode and log the token to see what's in it
+        const auth = (req.headers && req.headers.authorization) || "";
+        if (auth && typeof auth === "string" && auth.startsWith("Bearer ")) {
+          try {
+            const token = auth.slice(7); // Remove "Bearer "
+            const parts = token.split(".");
+            if (parts.length === 3) {
+              const decoded = JSON.parse(Buffer.from(parts[1], "base64").toString());
+              console.error(`[auth] Token claims: aud=${decoded.aud}, sub=${decoded.sub}, iss=${decoded.iss}`);
+            }
+          } catch (decodeErr) {
+            console.error("[auth] Could not decode token:", decodeErr);
+          }
+        }
         return next(err);
       }
 
+      // ✅ NEW: Manually extract and attach user if not present
+      if (!req.user) {
+        const auth = (req.headers && req.headers.authorization) || "";
+        if (auth && typeof auth === "string" && auth.startsWith("Bearer ")) {
+          try {
+            const token = auth.slice(7);
+            const parts = token.split(".");
+            if (parts.length === 3) {
+              const decoded = JSON.parse(Buffer.from(parts[1], "base64").toString());
+              req.user = decoded; // ✅ Attach decoded token as user
+              console.log(`[auth] User claims manually attached from token`);
+            }
+          } catch (decodeErr) {
+            console.error("[auth] Could not manually extract user claims:", decodeErr);
+          }
+        }
+      }
+
       try {
-        const user = (req as any).user;
+        const user =  req.user;
         if (user) {
           const preview = {
             sub: user.sub,
@@ -70,13 +118,15 @@ export const checkJwtWithLogging = (req: Request, res: Response, next: NextFunct
   }
 };
 
+
 export const validateDomain = (req: Request, res: Response, next: NextFunction) => {
-  const user = (req as any).user;
+  const user = req.user;
   if (!user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const email = user.preferred_username || user.email || "";
+  // ✅ FIXED: Check upn first (API token has upn, not preferred_username)
+  const email = user.upn || user.preferred_username || user.email || "";
   if (!email.endsWith(ALLOWED_DOMAIN)) {
     return res.status(403).json({
       error: "Access Denied",
@@ -84,18 +134,20 @@ export const validateDomain = (req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  (req as any).userEmail = email;
+  req.userEmail = email;
   next();
 };
 
 export const extractUserInfo = (req: Request, res: Response, next: NextFunction) => {
-  const user = (req as any).user;
+  const user = req.user;
   if (user) {
-    (req as any).userInfo = {
-      email: user.preferred_username || user.email,
+    req.userInfo = {
+      // ✅ FIXED: Check upn first
+      email: user.upn || user.preferred_username || user.email,
       name: user.name || "Unknown",
       oid: user.oid,
     };
   }
   next();
 };
+

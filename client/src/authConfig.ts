@@ -18,3 +18,10 @@ export const loginRequest = {
     "email",
   ],
 };
+
+// ✅ CRITICAL: Use the exposed scope format
+export const apiScopes = [
+  "api://5b21943f-59c2-4cf9-ad62-056b6302e168/access",  // ← The scope you just created
+];
+
+console.log("[authConfig] API scopes configured:", apiScopes);
