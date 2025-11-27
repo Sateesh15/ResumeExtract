@@ -1,4 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import msalInstance from "./msalInstance";
+import { loginRequest } from "@/authConfig";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -31,8 +33,31 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const url = queryKey.join("/") as string;
+
+    // Attempt to acquire an access token silently and attach Authorization header
+    const accounts = msalInstance.getAllAccounts();
+    let headers: Record<string, string> = {};
+
+    if (accounts && accounts.length > 0) {
+      try {
+        const response = await msalInstance.acquireTokenSilent({
+          account: accounts[0],
+          scopes: loginRequest.scopes,
+        } as any);
+
+        if (response && response.accessToken) {
+          headers["Authorization"] = `Bearer ${response.accessToken}`;
+        }
+      } catch (err) {
+        // token acquisition failed silently — proceed without Authorization header
+        // console.debug("acquireTokenSilent failed", err);
+      }
+    }
+
+    const res = await fetch(url, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

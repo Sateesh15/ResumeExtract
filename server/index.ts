@@ -1,10 +1,9 @@
 import "dotenv/config";
 
-
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-
+import { checkJwt, validateDomain, extractUserInfo, logAuthRequest, checkJwtWithLogging } from "../server/lib/auth";
 
 const app = express();
 
@@ -13,6 +12,7 @@ declare module 'http' {
     rawBody: unknown
   }
 }
+
 app.use(express.json({
   verify: (req, _res, buf) => {
     req.rawBody = buf;
@@ -51,6 +51,33 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // ✅ AUTHENTICATION + LOGGING MIDDLEWARE
+  // Log whether Authorization header is present
+  app.use("/api", logAuthRequest);
+
+  app.use("/api", (req, res, next) => {
+    // Skip JWT check for public endpoints (if any)
+    if (req.path === "/health" || req.path === "/ping") {
+      return next();
+    }
+
+    // Apply JWT validation with logging
+    checkJwtWithLogging(req, res, (err: any) => {
+      if (err) {
+        return res.status(401).json({ 
+          error: "Unauthorized", 
+          details: err && err.message ? err.message : String(err),
+        });
+      }
+      next();
+    });
+  });
+
+  // Apply domain validation and user info extraction
+  app.use("/api", extractUserInfo);
+  app.use("/api", validateDomain);
+
+  // Register your routes
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -75,7 +102,7 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen(port, "127.0.0.1", () => {
-  log(`Server running at http://127.0.0.1:${port}`);
-});
+  server.listen(port, "localhost", () => {
+    log(`Server running at http://localhost:${port}`);
+  });
 })();

@@ -69,14 +69,19 @@ Built for recruiters, HR staff, and hiring managers to efficiently process and e
 - Supports EML email files with automatic attachment extraction
 - Recursive processing of PDF attachments within emails
 - File validation (type and size limits)
+- Bulk upload with advanced filtering (skills, position, experience)
+- Real-time validation and error feedback
 
+### 2. Manual Extractor
 ### 2. Manual Extractor
 - Two-column layout with raw text preview and field mapping form
 - Upload → Extract text → Map fields manually → Save
 - Editable fields: name, emails, phones, skills, summary
 - Sticky action bar with Save, Clear, and Export buttons
 - Real-time text extraction from uploaded files
+- Inline editing and validation for candidate fields
 
+### 3. AI Agent Extractor
 ### 3. AI Agent Extractor
 - Automatic candidate information extraction using OpenAI gpt-5
 - Confidence score display (0-100%) for overall and individual fields
@@ -85,7 +90,10 @@ Built for recruiters, HR staff, and hiring managers to efficiently process and e
 - Search and filter candidates by name, email, or phone
 - Flag mechanism for re-extraction with deeper analysis
 - Card-based results display with detailed modal view
+- Multi-pass deep extraction for flagged records
+- Experience calculation from summary and job dates
 
+### 4. Candidate Management
 ### 4. Candidate Management
 - Comprehensive candidate detail modal with inline editing
 - Support for multiple emails, phones, and skills per candidate
@@ -93,32 +101,43 @@ Built for recruiters, HR staff, and hiring managers to efficiently process and e
 - View extraction metadata (source file, timestamp, mode, confidence)
 - Update and save candidate information
 - Flag candidates for additional extraction passes
+- Delete single or all candidates
+- Filter and bulk export candidates
 
+### 5. Data Export
 ### 5. Data Export
 - Excel (.xlsx) export with all candidate fields
 - Formatted columns with headers
 - Includes confidence scores, extraction mode, and flagged status
 - Downloadable file with timestamp
+- Export filtered candidates to Excel
 
+### 6. Dashboard
 ### 6. Dashboard
 - Statistics cards: Total candidates, Flagged count, Completed jobs, Processing jobs
 - Recent uploads table with Name, Email, Phone, Source, Extracted date
 - Quick action cards to navigate to Manual or AI extractors
+- Job queue management and status tracking
 
 ## API Endpoints
 
 ### File Upload & Processing
-- `POST /api/upload` - Upload and process PDF/EML files (with mode: manual|ai)
+- `POST /api/upload` - Upload and process PDF/EML files (mode: manual|ai, autoExtract)
+- `POST /api/candidates/bulk-upload-filter` - Bulk upload with filter criteria
 
 ### Candidate Management
 - `GET /api/candidates` - List all candidates (sorted by extraction date)
 - `GET /api/candidates/:id` - Get single candidate details
 - `POST /api/candidates/:id` - Update candidate information
 - `POST /api/candidates/:id/flag` - Flag candidate and trigger re-extraction
+- `DELETE /api/candidates/:id` - Delete single candidate
+- `DELETE /api/candidates` - Delete all candidates
+- `POST /api/candidates/filter` - Filter candidates by criteria
 
 ### Extraction
 - `POST /api/extract/manual` - Save manually mapped candidate data
 - `POST /api/extract/ai` - Run AI extraction on provided text
+- `POST /api/extract` - General extraction endpoint
 
 ### Jobs
 - `GET /api/jobs` - List all extraction jobs
@@ -126,6 +145,7 @@ Built for recruiters, HR staff, and hiring managers to efficiently process and e
 
 ### Export
 - `GET /api/export?format=xlsx` - Export all candidates to Excel
+- `POST /api/export-filtered` - Export filtered candidates to Excel
 
 ## Data Model
 
@@ -148,6 +168,7 @@ Built for recruiters, HR staff, and hiring managers to efficiently process and e
   flagged: boolean;
   extractionMode: "manual" | "ai";
   rawText?: string;
+  deleted?: boolean;
 }
 ```
 
@@ -220,13 +241,15 @@ Required secrets (configured via Replit Secrets):
 9. Export all candidates to Excel when done
 
 ## Future Enhancements (Post-MVP)
-- PostgreSQL database for persistent storage
-- CSV and JSON export formats
-- Per-resume summary file generation (.txt or .md)
-- ZIP file upload with batch processing
-- Admin dashboard with extraction statistics
-- Audit trail for tracking edits and verifications
-- Multi-pass deep extraction for flagged records
-- Confidence threshold settings and auto-accept workflows
-- Real-time job queue with BullMQ and Redis
-- OCR support for scanned PDFs (Tesseract.js)
+-- PostgreSQL database for persistent storage
+-- CSV and JSON export formats
+-- Per-resume summary file generation (.txt or .md)
+-- ZIP file upload with batch processing
+-- Admin dashboard with extraction statistics
+-- Audit trail for tracking edits and verifications
+-- Multi-pass deep extraction for flagged records
+-- Confidence threshold settings and auto-accept workflows
+-- Real-time job queue with BullMQ and Redis
+-- OCR support for scanned PDFs (Tesseract.js)
+-- Advanced candidate filtering and analytics
+-- Enhanced Excel export with clickable URLs and formatting
