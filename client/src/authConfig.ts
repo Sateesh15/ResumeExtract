@@ -12,9 +12,9 @@ export const msalConfig = {
 
 export const loginRequest = {
   scopes: [
-    "api://5b21943f-59c2-4cf9-ad62-056b6302e168/access",  // ⭐ ADD THIS LINE
     "User.Read",
     "openid",
     "profile",
+    "email",
   ],
 };
