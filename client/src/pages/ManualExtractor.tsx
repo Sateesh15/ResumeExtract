@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { FileText, Save, Download, Trash2, Plus, Loader } from "lucide-react";
 import type { InsertCandidate, Candidate } from "@shared/schema";
+import msalInstance from "@/lib/msalInstance";
 
 type ManualUploadResponse = {
   success: boolean;
@@ -45,6 +46,43 @@ type ExtractedData = {
   }>;
   confidence: any;
 };
+
+
+// ✅ NEW: Helper function to get auth headers
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const accounts = msalInstance.getAllAccounts();
+  let headers: Record<string, string> = {};
+
+  if (accounts && accounts.length > 0) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        account: accounts[0], // ✅ Use accounts
+        scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+      } as any);
+
+      if (response?.accessToken) {
+        headers["Authorization"] = `Bearer ${response.accessToken}`;
+      }
+    } catch (err) {
+      console.error("[ManualExtractor] Token acquisition failed:", err);
+      // Fallback to popup
+      try {
+        const popupResponse = await msalInstance.acquireTokenPopup({
+          account: accounts,
+          scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+        } as any);
+
+        if (popupResponse?.accessToken) {
+          headers["Authorization"] = `Bearer ${popupResponse.accessToken}`;
+        }
+      } catch (popupErr) {
+        console.error("[ManualExtractor] Popup token acquisition also failed:", popupErr);
+      }
+    }
+  }
+
+  return headers;
+}
 
 export default function ManualExtractor() {
   const { toast } = useToast();
@@ -142,96 +180,131 @@ export default function ManualExtractor() {
 // };
 
 const extractCandidateData = async (text: string, filename: string) => {
-  const res = await fetch("/api/extract/ai", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text,        // FIXED
-      filename,    // FIXED
-    }),
-  });
+  try {
+    setIsExtracting(true);
+    
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
 
-  const responseText = await res.text();
+    const res = await fetch("/api/extract/ai", {
+      method: "POST",
+      headers, // ✅ Include Authorization
+      body: JSON.stringify({
+        text,
+        filename,
+      }),
+      credentials: "include",
+    });
 
-  const extractedData = JSON.parse(responseText);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || `HTTP error! status: ${res.status}`);
+    }
 
-  setFormData((prev) => ({
-    ...prev,
-    fullName: extractedData.fullName || "",
-    emails: extractedData.emails?.length ? extractedData.emails : [""],
-    phones: extractedData.phones?.length ? extractedData.phones : [""],
-    summary: extractedData.summary || "",
-    skills: extractedData.skills?.length ? extractedData.skills : [""],
-    experience: extractedData.experience || [],
-    education: extractedData.education || [],
-    certifications: extractedData.certifications || [],
-  }));
+    const responseText = await res.text();
+    const extractedData = JSON.parse(responseText);
+
+    setFormData((prev) => ({
+      ...prev,
+      fullName: extractedData.fullName || "",
+      emails: extractedData.emails?.length ? extractedData.emails : [""],
+      phones: extractedData.phones?.length ? extractedData.phones : [""],
+      summary: extractedData.summary || "",
+      skills: extractedData.skills?.length ? extractedData.skills : [""],
+      experience: extractedData.experience || [],
+      education: extractedData.education || [],
+      certifications: extractedData.certifications || [],
+    }));
+
+    toast({
+      title: "✅ Data extracted successfully",
+      description: `Found name: ${extractedData.fullName || "N/A"}`,
+    });
+  } catch (error) {
+    console.error("❌ Extraction error:", error);
+    toast({
+      title: "Extraction failed",
+      description: error instanceof Error ? error.message : "Could not extract data.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsExtracting(false);
+  }
 };
 
 
 
+
   const uploadMutation = useMutation<ManualUploadResponse, Error, File>({
-    mutationFn: async (file: File) => {
-      console.log("🚀 Starting file upload:", file.name);
-      
-      const formDataToSend = new FormData();
-      formDataToSend.append("file", file);
-      formDataToSend.append("mode", "manual");
+  mutationFn: async (file: File) => {
+    console.log("🚀 Starting file upload:", file.name);
+    
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    
+    const formDataToSend = new FormData();
+    formDataToSend.append("file", file);
+    formDataToSend.append("mode", "manual");
 
-      try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          body: formDataToSend,
-        });
-        
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        
-        const jsonData = (await res.json()) as ManualUploadResponse;
-        console.log("✅ API Response received:", {
-          success: jsonData.success,
-          rawTextLength: jsonData.rawText?.length,
-          filename: jsonData.filename,
-        });
-        
-        return jsonData;
-      } catch (error) {
-        console.error("❌ Upload failed:", error);
-        throw error;
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers, // ✅ Include Authorization header
+        body: formDataToSend,
+        credentials: "include",
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.details || error.error || `HTTP error! status: ${res.status}`);
       }
-    },
-
-    onSuccess: (data: ManualUploadResponse) => {
-      console.log("📦 onSuccess triggered");
       
-      // Update rawText
-      setRawText(data.rawText || "");
+      const jsonData = (await res.json()) as ManualUploadResponse;
+      console.log("✅ API Response received:", {
+        success: jsonData.success,
+        rawTextLength: jsonData.rawText?.length,
+        filename: jsonData.filename,
+      });
       
-      setFormData((prev) => ({
-        ...prev,
-        sourceFile: data.filename || "",
-        rawText: data.rawText || "",
-      }));
+      return jsonData;
+    } catch (error) {
+      console.error("❌ Upload failed:", error);
+      throw error;
+    }
+  },
 
-      // 🔥 Call AI extraction
-      extractCandidateData(data.rawText, data.filename);
+  onSuccess: (data: ManualUploadResponse) => {
+    console.log("📦 onSuccess triggered");
+    
+    // Update rawText
+    setRawText(data.rawText || "");
+    
+    setFormData((prev) => ({
+      ...prev,
+      sourceFile: data.filename || "",
+      rawText: data.rawText || "",
+    }));
 
-      toast({
-        title: "✅ File uploaded successfully",
-        description: `Extracted ${data.rawText?.length || 0} characters`,
-      });
-    },
+    // 🔥 Call AI extraction
+    extractCandidateData(data.rawText, data.filename);
 
-    onError: (error: Error) => {
-      console.error("❌ Upload error:", error);
-      toast({
-        title: "Upload failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+    toast({
+      title: "✅ File uploaded successfully",
+      description: `Extracted ${data.rawText?.length || 0} characters`,
+    });
+  },
+
+  onError: (error: Error) => {
+    console.error("❌ Upload error:", error);
+    toast({
+      title: "Upload failed",
+      description: error.message,
+      variant: "destructive",
+    });
+  },
+});
+
 
   // Debug: Monitor state changes
   useEffect(() => {
@@ -242,29 +315,46 @@ const extractCandidateData = async (text: string, filename: string) => {
   }, [rawText]);
 
   const saveMutation = useMutation<any, Error, InsertCandidate>({
-    mutationFn: async (data: InsertCandidate) => {
-      const res = await apiRequest("POST", "/api/extract/manual", {
+  mutationFn: async (data: InsertCandidate) => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
+
+    const res = await fetch("/api/extract/manual", {
+      method: "POST",
+      headers, // ✅ Include Authorization
+      body: JSON.stringify({
         ...data,
         rawText,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "Candidate saved",
-        description: "The candidate information has been saved successfully.",
-      });
-      handleClear();
-    },
-    onError: () => {
-      toast({
-        title: "Save failed",
-        description: "Failed to save candidate information.",
-        variant: "destructive",
-      });
-    },
-  });
+      }),
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || `HTTP error! status: ${res.status}`);
+    }
+
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "Candidate saved",
+      description: "The candidate information has been saved successfully.",
+    });
+    handleClear();
+  },
+  onError: (error) => {
+    console.error("Save error:", error);
+    toast({
+      title: "Save failed",
+      description: error.message || "Failed to save candidate information.",
+      variant: "destructive",
+    });
+  },
+});
+
 
   const handleFilesSelected = (files: File[]) => {
     if (files.length > 0) {
