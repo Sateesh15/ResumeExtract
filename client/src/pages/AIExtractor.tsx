@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Download, Search, Filter, Upload } from "lucide-react";
 import type { Candidate } from "@shared/schema";
 import { Trash2 } from "lucide-react";
+import msalInstance from "@/lib/msalInstance";
 
 
 type UploadResponse = {
@@ -22,6 +23,44 @@ type UploadResponse = {
   filesProcessed?: number;
   message?: string;
 };
+
+
+// ✅ FIXED: Helper function to get auth headers
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const accounts = msalInstance.getAllAccounts();
+  let headers: Record<string, string> = {};
+
+  if (accounts && accounts.length > 0) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        account: accounts[0], // ✅ FIX: Use accounts[0]
+        scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+      } as any);
+
+      if (response?.accessToken) {
+        headers["Authorization"] = `Bearer ${response.accessToken}`;
+      }
+    } catch (err) {
+      console.error("[AIExtractor] Token acquisition failed:", err);
+      // Fallback: try popup
+      try {
+        const popupResponse = await msalInstance.acquireTokenPopup({
+          account: accounts[0], // ✅ Also here
+          scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+        } as any);
+
+        if (popupResponse?.accessToken) {
+          headers["Authorization"] = `Bearer ${popupResponse.accessToken}`;
+        }
+      } catch (popupErr) {
+        console.error("[AIExtractor] Popup also failed:", popupErr);
+      }
+    }
+  }
+
+  return headers;
+}
+
 
 export default function AIExtractor() {
   const { toast } = useToast();
@@ -78,6 +117,10 @@ export default function AIExtractor() {
 
 const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   mutationFn: async (files: File[]): Promise<UploadResponse> => {
+
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const formData = new FormData();
     files.forEach((file) => formData.append("file", file)); // ✅ Use "file" not "files"
     formData.append("mode", "ai");
@@ -86,12 +129,14 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
     // ✅ Use fetch directly, NOT apiRequest
     const res = await fetch("/api/upload", {
       method: "POST",
-      body: formData, // ✅ FormData is sent directly
-      // DO NOT set Content-Type header - browser will set it automatically
+      headers,
+      body: formData,
+      credentials: "include",
     });
 
     if (!res.ok) {
-      throw new Error(`Upload failed: ${res.status}`);
+       const error = await res.json();
+      throw new Error(error.details || error.error || `Upload failed: ${res.status}`);
     }
 
     const data = (await res.json()) as UploadResponse;
@@ -148,7 +193,14 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
 
   const exportMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch("/api/export?format=xlsx");
+      // ✅ Get authorization header
+      const headers = await getAuthHeaders();
+
+      const response = await fetch("/api/export?format=xlsx", {
+      headers, // ✅ Authorization header included
+      credentials: "include",
+      });
+
       if (!response.ok) throw new Error("Export failed");
       
       const blob = await response.blob();
@@ -181,8 +233,14 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   // ✅ DELETE MUTATIONS
 const deleteMutation = useMutation({
   mutationFn: async (candidateId: string) => {
+
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const res = await fetch(`/api/candidates/${candidateId}`, {
       method: "DELETE",
+      headers, // ✅ Authorization header included
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Failed to delete");
     return res.json();
@@ -194,7 +252,8 @@ const deleteMutation = useMutation({
       description: "Candidate has been removed.",
     });
   },
-  onError: () => {
+  onError: (error) => {
+    console.error("Delete error:", error);
     toast({
       title: "❌ Delete failed",
       description: "Could not delete candidate.",
@@ -205,8 +264,13 @@ const deleteMutation = useMutation({
 
 const deleteAllMutation = useMutation({
   mutationFn: async () => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const res = await fetch("/api/candidates", {
       method: "DELETE",
+      headers, // ✅ Authorization header included
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Failed to delete all");
     return res.json();
@@ -218,7 +282,8 @@ const deleteAllMutation = useMutation({
       description: `${data.deletedCount} candidates removed.`,
     });
   },
-  onError: () => {
+  onError: (error) => {
+     console.error("Delete all error:", error);
     toast({
       title: "❌ Delete failed",
       description: "Could not delete candidates.",
