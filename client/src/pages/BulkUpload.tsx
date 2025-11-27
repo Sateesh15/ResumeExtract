@@ -7,7 +7,45 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import msalInstance from "@/lib/msalInstance";
 
+
+
+// ✅ NEW: Helper function to get auth headers
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const accounts = msalInstance.getAllAccounts();
+  let headers: Record<string, string> = {};
+
+  if (accounts && accounts.length > 0) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        account: accounts[0], // ✅ Use accounts
+        scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+      } as any);
+
+      if (response?.accessToken) {
+        headers["Authorization"] = `Bearer ${response.accessToken}`;
+      }
+    } catch (err) {
+      console.error("[BulkUpload] Token acquisition failed:", err);
+      // Fallback to popup
+      try {
+        const popupResponse = await msalInstance.acquireTokenPopup({
+          account: accounts,
+          scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+        } as any);
+
+        if (popupResponse?.accessToken) {
+          headers["Authorization"] = `Bearer ${popupResponse.accessToken}`;
+        }
+      } catch (popupErr) {
+        console.error("[BulkUpload] Popup token acquisition also failed:", popupErr);
+      }
+    }
+  }
+
+  return headers;
+}
 
 export default function BulkUpload() {
   const [, setLocation] = useLocation(); // ✅ FIXED: Use useLocation instead of useNavigate
@@ -84,58 +122,66 @@ export default function BulkUpload() {
   };
 
   const handleUpload = async () => {
-    if (files.length === 0) {
-      toast({
-        title: "No files selected",
-        description: "Please select PDF files to upload",
-        variant: "destructive",
-      });
-      return;
+  if (files.length === 0) {
+    toast({
+      title: "No files selected",
+      description: "Please select PDF files to upload",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setUploading(true);
+
+  try {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
+    const formData = new FormData();
+    
+    // Add files
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+
+    // Add filter criteria
+    formData.append('skills', JSON.stringify(skills));
+    formData.append('skillsMatchMode', skillsMatchMode);
+    formData.append('position', position);
+    formData.append('minExperience', minExperience.toString());
+    formData.append('maxExperience', maxExperience.toString());
+
+    const response = await fetch('/api/candidates/bulk-upload-filter', {
+      method: 'POST',
+      headers, // ✅ Include Authorization header
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.details || error.error || `Upload failed: ${response.status}`);
     }
 
-    setUploading(true);
+    const data = await response.json();
+    setResults(data);
 
-    try {
-      const formData = new FormData();
-      
-      // Add files
-      files.forEach(file => {
-        formData.append('files', file);
-      });
+    toast({
+      title: "✅ Upload Complete",
+      description: `${data.matched} candidates matched and saved, ${data.rejected} rejected`,
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+    toast({
+      title: "❌ Upload Failed",
+      description: error instanceof Error ? error.message : "Unknown error",
+      variant: "destructive",
+    });
+  } finally {
+    setUploading(false);
+  }
+};
 
-      // Add filter criteria
-      formData.append('skills', JSON.stringify(skills));
-      formData.append('skillsMatchMode', skillsMatchMode);
-      formData.append('position', position);
-      formData.append('minExperience', minExperience.toString());
-      formData.append('maxExperience', maxExperience.toString());
-
-      const response = await fetch('/api/candidates/bulk-upload-filter', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const data = await response.json();
-      setResults(data);
-
-      toast({
-        title: "✅ Upload Complete",
-        description: `${data.matched} candidates matched and saved, ${data.rejected} rejected`,
-      });
-    } catch (error) {
-      toast({
-        title: "❌ Upload Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">

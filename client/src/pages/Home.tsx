@@ -10,6 +10,42 @@ import { Link } from "wouter";
 import type { Candidate, ExtractionJob } from "@shared/schema";
 import { CandidateFilter } from '@/components/CandidateFilter';
 import { useState, useEffect } from 'react';
+import msalInstance from "@/lib/msalInstance";
+
+// ✅ NEW: Helper function to get auth headers
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const accounts = msalInstance.getAllAccounts();
+  let headers: Record<string, string> = {};
+
+  if (accounts && accounts.length > 0) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        account: accounts[0],
+        scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+      } as any);
+
+      if (response?.accessToken) {
+        headers["Authorization"] = `Bearer ${response.accessToken}`;
+      }
+    } catch (err) {
+      console.error("[Home] Token acquisition failed:", err);
+      try {
+        const popupResponse = await msalInstance.acquireTokenPopup({
+          account: accounts[0],
+          scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+        } as any);
+
+        if (popupResponse?.accessToken) {
+          headers["Authorization"] = `Bearer ${popupResponse.accessToken}`;
+        }
+      } catch (popupErr) {
+        console.error("[Home] Popup token acquisition also failed:", popupErr);
+      }
+    }
+  }
+
+  return headers;
+}
 
 export default function Home() {
   const { data: candidates, isLoading: loadingCandidates } = useQuery<Candidate[]>({
@@ -41,8 +77,15 @@ export default function Home() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+
+      // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
       const res = await fetch(`/api/candidates/${id}`, {
         method: "DELETE",
+        headers, // ✅ Include Authorization
+        credentials: "include",
+
       });
       if (!res.ok) throw new Error("Failed to delete");
       return res.json();
@@ -65,8 +108,13 @@ export default function Home() {
 
   const deleteAllMutation = useMutation({
     mutationFn: async () => {
+      // ✅ Get authorization header
+      const headers = await getAuthHeaders();
+
       const res = await fetch("/api/candidates", {
         method: "DELETE",
+        headers, // ✅ Include Authorization
+      credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to delete all");
       return res.json();
@@ -101,11 +149,17 @@ export default function Home() {
 
   const handleFilterChange = async (criteria: any) => {
     try {
-      const response = await fetch('/api/candidates/filter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(criteria),
-      });
+
+      // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
+
+       const response = await fetch('/api/candidates/filter', {
+      method: 'POST',
+      headers, // ✅ Include Authorization
+      body: JSON.stringify(criteria),
+      credentials: "include",
+    });
       
       const data = await response.json();
       if (data && data.candidates && Array.isArray(data.candidates)) {
@@ -137,15 +191,21 @@ export default function Home() {
     setIsExporting(true);
 
     try {
+
+      // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
+
       // Send filtered candidate IDs to backend
       const candidateIds = filteredCandidates.map(c => c.id);
       
-      const response = await fetch('/api/export-filtered', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidateIds }),
-      });
-
+       const response = await fetch('/api/export-filtered', {
+      method: 'POST',
+      headers, // ✅ Include Authorization
+      body: JSON.stringify({ candidateIds }),
+      credentials: "include",
+    });
+    
       if (!response.ok) {
         throw new Error('Export failed');
       }
