@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
   };
 
-  // ✅ FIXED: Set loading to false after initial mount
+  
   useEffect(() => {
     setIsLoading(false);
   }, []);
