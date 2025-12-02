@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import msalInstance from "@/lib/msalInstance";
+
 
 // ✅ Helper function to get auth headers
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -47,6 +49,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 export default function BulkUpload() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   // Filter criteria state
   const [skills, setSkills] = useState<string[]>([]);
@@ -629,7 +632,11 @@ export default function BulkUpload() {
                 }} variant="outline">
                   Upload More
                 </Button>
-                <Button onClick={() => setLocation('/')}>
+                <Button onClick={() => {
+                  // ✅ INVALIDATE CACHE to refresh Home page data
+                  queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+                  setLocation('/');
+                }}>
                   View All Candidates
                 </Button>
               </div>
