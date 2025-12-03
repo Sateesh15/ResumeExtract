@@ -4,6 +4,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { checkJwt, validateDomain, extractUserInfo, logAuthRequest, checkJwtWithLogging } from "../server/lib/auth";
+import { initializeStorage } from "./storage";
 
 const app = express();
 
@@ -51,6 +52,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+
+  console.log("🔄 Initializing MongoDB storage...");
+  const storage = await initializeStorage();
+  console.log("✅ MongoDB storage initialized");
+
   // ✅ AUTHENTICATION + LOGGING MIDDLEWARE
   // Log whether Authorization header is present
   app.use("/api", logAuthRequest);
@@ -77,7 +83,7 @@ app.use((req, res, next) => {
   app.use("/api", extractUserInfo);
   app.use("/api", validateDomain);
 
-  // Register your routes
+  // Register your routes (storage is now available globally)
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -104,5 +110,6 @@ app.use((req, res, next) => {
   const port = parseInt(process.env.PORT || '5000', 10);
   server.listen(port, "localhost", () => {
     log(`Server running at http://localhost:${port}`);
+    log(`📦 Using MongoDB storage from: ${process.env.MONGODB_URI || 'mongodb://localhost:27017'}`);
   });
 })();
