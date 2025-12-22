@@ -11,6 +11,8 @@ import type { Candidate, ExtractionJob } from "@shared/schema";
 import { CandidateFilter } from '@/components/CandidateFilter';
 import { useState, useEffect } from 'react';
 import msalInstance from "@/lib/msalInstance";
+import { CandidateAnalytics } from '@/components/CandidateAnalytics';
+
 
 // ✅ NEW: Helper function to get auth headers
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -58,6 +60,8 @@ export default function Home() {
 
   const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+
 
   useEffect(() => {
     if (candidates) {
@@ -373,6 +377,26 @@ export default function Home() {
           />
         </div>
       )}
+
+      {/* ✅ ADD THIS: Analytics Toggle Button */}
+  {!loadingCandidates && candidates && candidates.length > 0 && (
+    <div className="mb-8">
+      <Button 
+        onClick={() => setShowAnalytics(!showAnalytics)}
+        className="w-full"
+        variant="outline"
+      >
+        {showAnalytics ? '📊 Hide Analytics' : '📊 Show Analytics'}
+      </Button>
+    </div>
+  )}
+
+  {/* ✅ ADD THIS: Analytics Display */}
+  {showAnalytics && filteredCandidates.length > 0 && (
+    <div className="mb-8">
+      <CandidateAnalytics candidates={filteredCandidates} />
+    </div>
+  )}
 
       {/* Recent Uploads Table */}
       <Card>
