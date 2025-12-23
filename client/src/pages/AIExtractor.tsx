@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Download, Search, Filter, Upload } from "lucide-react";
 import type { Candidate } from "@shared/schema";
 import { Trash2 } from "lucide-react";
+import msalInstance from "@/lib/msalInstance";
 
 
 type UploadResponse = {
@@ -22,6 +23,44 @@ type UploadResponse = {
   filesProcessed?: number;
   message?: string;
 };
+
+
+// ✅ FIXED: Helper function to get auth headers
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const accounts = msalInstance.getAllAccounts();
+  let headers: Record<string, string> = {};
+
+  if (accounts && accounts.length > 0) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        account: accounts[0], // ✅ FIX: Use accounts[0]
+        scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+      } as any);
+
+      if (response?.accessToken) {
+        headers["Authorization"] = `Bearer ${response.accessToken}`;
+      }
+    } catch (err) {
+      console.error("[AIExtractor] Token acquisition failed:", err);
+      // Fallback: try popup
+      try {
+        const popupResponse = await msalInstance.acquireTokenPopup({
+          account: accounts[0], // ✅ Also here
+          scopes: ["api://5b21943f-59c2-4cf9-ad62-056b6302e168/access"],
+        } as any);
+
+        if (popupResponse?.accessToken) {
+          headers["Authorization"] = `Bearer ${popupResponse.accessToken}`;
+        }
+      } catch (popupErr) {
+        console.error("[AIExtractor] Popup also failed:", popupErr);
+      }
+    }
+  }
+
+  return headers;
+}
+
 
 export default function AIExtractor() {
   const { toast } = useToast();
@@ -78,18 +117,30 @@ export default function AIExtractor() {
 
 const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   mutationFn: async (files: File[]): Promise<UploadResponse> => {
+
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const formData = new FormData();
-    files.forEach((file) => formData.append("file", file));
+    files.forEach((file) => formData.append("file", file)); // ✅ Use "file" not "files"
     formData.append("mode", "ai");
     formData.append("autoExtract", autoExtract.toString());
 
-    // apiRequest returns Response
-    const res: Response = await apiRequest("POST", "/api/upload", formData);
+    // ✅ Use fetch directly, NOT apiRequest
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers,
+      body: formData,
+      credentials: "include",
+    });
 
-    // You MUST convert to JSON here
+    if (!res.ok) {
+       const error = await res.json();
+      throw new Error(error.details || error.error || `Upload failed: ${res.status}`);
+    }
+
     const data = (await res.json()) as UploadResponse;
-
-    return data; // React Query receives UploadResponse
+    return data;
   },
 
   onSuccess: (data) => {
@@ -114,35 +165,82 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   },
 });
 
-  const updateMutation = useMutation({
-    mutationFn: async (candidate: Candidate) => {
-      return await apiRequest("POST", `/api/candidates/${candidate.id}`, candidate);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "Candidate updated",
-        description: "Changes have been saved successfully.",
-      });
-    },
-  });
+  // ✅ UPDATE MUTATION
+const updateMutation = useMutation({
+  mutationFn: async (candidate: Candidate) => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
 
-  const flagMutation = useMutation({
-    mutationFn: async (candidateId: string) => {
-      return await apiRequest("POST", `/api/candidates/${candidateId}/flag`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "Candidate flagged",
-        description: "This candidate has been flagged for deep extraction.",
-      });
-    },
-  });
+    const res = await fetch(`/api/candidates/${candidate.id}`, {
+      method: "POST",
+      headers, // ✅ Authorization header included
+      body: JSON.stringify(candidate),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to update candidate");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Updated",
+      description: "Changes have been saved successfully.",
+    });
+  },
+  onError: (error) => {
+    console.error("Update error:", error);
+    toast({
+      title: "❌ Update failed",
+      description: "Could not update candidate.",
+      variant: "destructive",
+    });
+  },
+});
+
+  // ✅ FLAG MUTATION
+const flagMutation = useMutation({
+  mutationFn: async (candidateId: string) => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
+
+    const res = await fetch(`/api/candidates/${candidateId}/flag`, {
+      method: "POST",
+      headers, // ✅ Authorization header included
+      body: JSON.stringify({}),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to flag candidate");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Flagged",
+      description: "This candidate has been flagged for deep extraction.",
+    });
+  },
+  onError: (error) => {
+    console.error("Flag error:", error);
+    toast({
+      title: "❌ Flag failed",
+      description: "Could not flag candidate.",
+      variant: "destructive",
+    });
+  },
+});
 
   const exportMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch("/api/export?format=xlsx");
+      // ✅ Get authorization header
+      const headers = await getAuthHeaders();
+
+      const response = await fetch("/api/export?format=xlsx", {
+      headers, // ✅ Authorization header included
+      credentials: "include",
+      });
+
       if (!response.ok) throw new Error("Export failed");
       
       const blob = await response.blob();
@@ -175,8 +273,14 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   // ✅ DELETE MUTATIONS
 const deleteMutation = useMutation({
   mutationFn: async (candidateId: string) => {
+
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const res = await fetch(`/api/candidates/${candidateId}`, {
       method: "DELETE",
+      headers, // ✅ Authorization header included
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Failed to delete");
     return res.json();
@@ -188,7 +292,8 @@ const deleteMutation = useMutation({
       description: "Candidate has been removed.",
     });
   },
-  onError: () => {
+  onError: (error) => {
+    console.error("Delete error:", error);
     toast({
       title: "❌ Delete failed",
       description: "Could not delete candidate.",
@@ -199,8 +304,13 @@ const deleteMutation = useMutation({
 
 const deleteAllMutation = useMutation({
   mutationFn: async () => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+
     const res = await fetch("/api/candidates", {
       method: "DELETE",
+      headers, // ✅ Authorization header included
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Failed to delete all");
     return res.json();
@@ -212,7 +322,8 @@ const deleteAllMutation = useMutation({
       description: `${data.deletedCount} candidates removed.`,
     });
   },
-  onError: () => {
+  onError: (error) => {
+     console.error("Delete all error:", error);
     toast({
       title: "❌ Delete failed",
       description: "Could not delete candidates.",

@@ -5,6 +5,11 @@ import {
   type InsertExtractionJob,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { MongoClient, Db, Collection } from "mongodb";
+
+// ✅ MongoDB connection string (use environment variable)
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017";
+const DB_NAME = "resume_extractor";
 
 export interface IStorage {
   // Candidate operations
@@ -23,34 +28,72 @@ export interface IStorage {
   updateJob(id: string, job: Partial<ExtractionJob>): Promise<ExtractionJob | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private candidates: Map<string, Candidate>;
-  private jobs: Map<string, ExtractionJob>;
+export class MongoStorage implements IStorage {
+  private client: MongoClient;
+  private db: Db | null = null;
+  private candidatesCollection: Collection<Candidate> | null = null;
+  private jobsCollection: Collection<ExtractionJob> | null = null;
 
   constructor() {
-    this.candidates = new Map();
-    this.jobs = new Map();
+    this.client = new MongoClient(MONGODB_URI);
+  }
+
+  // ✅ Initialize MongoDB connection
+  async connect(): Promise<void> {
+    try {
+      await this.client.connect();
+      this.db = this.client.db(DB_NAME);
+      this.candidatesCollection = this.db.collection<Candidate>("candidates");
+      this.jobsCollection = this.db.collection<ExtractionJob>("jobs");
+
+      // Create indexes for better performance
+      await this.candidatesCollection.createIndex({ extractedAt: -1 });
+      await this.candidatesCollection.createIndex({ fullName: "text", skills: "text" });
+      await this.jobsCollection.createIndex({ startedAt: -1 });
+
+      console.log("✅ MongoDB connected successfully");
+    } catch (error) {
+      console.error("❌ Failed to connect to MongoDB:", error);
+      throw error;
+    }
+  }
+
+  // ✅ Close MongoDB connection
+  async disconnect(): Promise<void> {
+    if (this.client) {
+      await this.client.close();
+      console.log("✅ MongoDB disconnected");
+    }
   }
 
   // Candidate operations
   async getCandidates(): Promise<Candidate[]> {
-    return Array.from(this.candidates.values()).sort(
-      (a, b) => new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime()
-    );
+    if (!this.candidatesCollection) throw new Error("Database not connected");
+    
+    return this.candidatesCollection
+      .find({})
+      .sort({ extractedAt: -1 })
+      .toArray();
   }
 
   async getCandidate(id: string): Promise<Candidate | undefined> {
-    return this.candidates.get(id);
+    if (!this.candidatesCollection) throw new Error("Database not connected");
+    
+    const candidate = await this.candidatesCollection.findOne({ id } as any);
+    return candidate || undefined;
   }
 
   async createCandidate(insertCandidate: InsertCandidate): Promise<Candidate> {
+    if (!this.candidatesCollection) throw new Error("Database not connected");
+
     const id = randomUUID();
     const candidate: Candidate = {
       ...insertCandidate,
       id,
       extractedAt: new Date().toISOString(),
-    };
-    this.candidates.set(id, candidate);
+    } as any;
+
+    await this.candidatesCollection.insertOne(candidate);
     return candidate;
   }
 
@@ -58,54 +101,72 @@ export class MemStorage implements IStorage {
     id: string,
     updates: Partial<Candidate>
   ): Promise<Candidate | undefined> {
-    const candidate = this.candidates.get(id);
-    if (!candidate) return undefined;
+    if (!this.candidatesCollection) throw new Error("Database not connected");
 
-    const updated = { ...candidate, ...updates };
-    this.candidates.set(id, updated);
-    return updated;
+    const result = await this.candidatesCollection.findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: "after" }
+    );
+
+    return result  as Candidate | undefined;
   }
 
   async deleteCandidate(id: string): Promise<boolean> {
-    return this.candidates.delete(id);
-  }
-  
-  async deleteAllCandidates(): Promise<number> {
-    const count = this.candidates.size;
-    this.candidates.clear();
-    return count;
+    if (!this.candidatesCollection) throw new Error("Database not connected");
+
+    const result = await this.candidatesCollection.deleteOne({ id } as any);
+    return result.deletedCount > 0;
   }
 
+  async deleteAllCandidates(): Promise<number> {
+    if (!this.candidatesCollection) throw new Error("Database not connected");
+
+    const result = await this.candidatesCollection.deleteMany({});
+    return result.deletedCount;
+  }
 
   async flagCandidate(id: string): Promise<Candidate | undefined> {
-    const candidate = this.candidates.get(id);
-    if (!candidate) return undefined;
+    if (!this.candidatesCollection) throw new Error("Database not connected");
 
-    const updated = { ...candidate, flagged: true };
-    this.candidates.set(id, updated);
-    return updated;
+    const result = await this.candidatesCollection.findOneAndUpdate(
+      { id },
+      { $set: { flagged: true } },
+      { returnDocument: "after" }
+    );
+
+   return result as Candidate | undefined;
   }
 
   // Extraction job operations
   async getJobs(): Promise<ExtractionJob[]> {
-    return Array.from(this.jobs.values()).sort(
-      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-    );
+    if (!this.jobsCollection) throw new Error("Database not connected");
+
+    return this.jobsCollection
+      .find({})
+      .sort({ startedAt: -1 })
+      .toArray();
   }
 
   async getJob(id: string): Promise<ExtractionJob | undefined> {
-    return this.jobs.get(id);
+    if (!this.jobsCollection) throw new Error("Database not connected");
+
+    const job = await this.jobsCollection.findOne({ id } as any);
+    return job || undefined;
   }
 
   async createJob(insertJob: InsertExtractionJob): Promise<ExtractionJob> {
+    if (!this.jobsCollection) throw new Error("Database not connected");
+
     const id = randomUUID();
     const job: ExtractionJob = {
       ...insertJob,
       id,
       startedAt: new Date().toISOString(),
       finishedAt: null,
-    };
-    this.jobs.set(id, job);
+    } as any;
+
+    await this.jobsCollection.insertOne(job);
     return job;
   }
 
@@ -113,13 +174,25 @@ export class MemStorage implements IStorage {
     id: string,
     updates: Partial<ExtractionJob>
   ): Promise<ExtractionJob | undefined> {
-    const job = this.jobs.get(id);
-    if (!job) return undefined;
+    if (!this.jobsCollection) throw new Error("Database not connected");
 
-    const updated = { ...job, ...updates };
-    this.jobs.set(id, updated);
-    return updated;
+    const result = await this.jobsCollection.findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: "after" }
+    );
+
+    return result as ExtractionJob | undefined;
   }
 }
 
-export const storage = new MemStorage();
+// ✅ Create and export singleton instance
+let storage: MongoStorage;
+
+export async function initializeStorage(): Promise<MongoStorage> {
+  storage = new MongoStorage();
+  await storage.connect();
+  return storage;
+}
+
+export { storage };

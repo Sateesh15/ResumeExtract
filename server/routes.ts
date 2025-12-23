@@ -7,6 +7,7 @@ import { processFile } from "./lib/fileProcessing";
 import { extractResumeData } from "./lib/openai";
 import { insertCandidateSchema } from "@shared/schema";
 import { filterCandidates, type FilterCriteria } from "./lib/filterUtils";
+import { checkJwtWithLogging, validateDomain, extractUserInfo } from "./lib/auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -548,7 +549,7 @@ function parseDate(dateStr: string | null): Date | null {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/upload - Upload and process files
-  app.post("/api/upload", upload.any(), async (req, res) => {
+  app.post("/api/upload", checkJwtWithLogging, validateDomain, extractUserInfo, upload.any(), async (req, res) => {
     try {
       const files = req.files as Express.Multer.File[];
       const mode = req.body.mode || "manual";
@@ -650,7 +651,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/candidates - List all candidates
-  app.get("/api/candidates", async (req, res) => {
+  app.get("/api/candidates", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res) => {
     try {
       const candidates = await storage.getCandidates();
       res.json(candidates);
@@ -661,7 +662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
    // ✅ POST /api/candidates/filter - Filter candidates
-app.post("/api/candidates/filter", async (req: Request, res: Response) => {
+  app.post("/api/candidates/filter", checkJwtWithLogging, validateDomain, extractUserInfo, async (req: Request, res: Response) => {
   try {
     const criteria: FilterCriteria = req.body;
     const allCandidates = await storage.getCandidates();
@@ -689,7 +690,7 @@ app.post("/api/candidates/filter", async (req: Request, res: Response) => {
 });
 
 // ✅ FIXED - POST /api/export-filtered - Export filtered candidates to Excel
-app.post("/api/export-filtered", async (req: Request, res: Response) => {
+app.post("/api/export-filtered", checkJwtWithLogging, validateDomain, extractUserInfo, async (req: Request, res: Response)=> {
   try {
     const { candidateIds } = req.body;
 
@@ -895,8 +896,117 @@ app.post("/api/export-filtered", async (req: Request, res: Response) => {
 });
 
 
+// // ✅ POST /api/candidates/bulk-upload-filter - Bulk upload with filtering
+//   app.post("/api/candidates/bulk-upload-filter", checkJwtWithLogging, validateDomain, extractUserInfo, upload.any(), async (req: Request, res: Response)=> {
+//   try {
+//     const files = req.files as Express.Multer.File[];
+    
+//     if (!files || files.length === 0) {
+//       return res.status(400).json({ error: "No files uploaded" });
+//     }
+
+//     // Get filter criteria from request body
+//     const filterCriteria: FilterCriteria = {
+//       skills: req.body.skills ? JSON.parse(req.body.skills) : [],
+//       skillsMatchMode: req.body.skillsMatchMode || 'AND',
+//       position: req.body.position || '',
+//       minExperience: req.body.minExperience ? parseInt(req.body.minExperience) : undefined,
+//       maxExperience: req.body.maxExperience ? parseInt(req.body.maxExperience) : undefined,
+//     };
+
+//     const results = [];
+//     let matchedCount = 0;
+//     let rejectedCount = 0;
+
+//     // Process each file
+//     for (let i = 0; i < files.length; i++) {
+//       const file = files[i];
+      
+//       try {
+//         // Extract text from PDF
+//         const processed = await processFile(file.buffer, file.originalname, file.mimetype);
+        
+//         // Extract candidate data using AI
+//         const extracted = await extractResumeData(processed.text, file.originalname);
+        
+//         // Create temporary candidate object for filtering
+//         const tempCandidate = {
+//           ...extracted,
+//           rawText: processed.text,
+//           attachments: processed.attachments,
+//           sourceFile: file.originalname,
+//         };
+
+//         // Check if candidate matches filter criteria
+//         const matches = filterCandidates(
+//           [tempCandidate] as any,
+//           filterCriteria,
+//           calculateTotalExperience
+//         );
+
+//         if (matches.length > 0) {
+//           // Candidate matches - save to database
+//           const candidate = await storage.createCandidate({
+//             fullName: extracted.fullName,
+//             emails: extracted.emails,
+//             phones: extracted.phones,
+//             summary: extracted.summary,
+//             education: extracted.education,
+//             experience: extracted.experience,
+//             skills: extracted.skills,
+//             certifications: extracted.certifications,
+//             attachments: processed.attachments,
+//             sourceFile: file.originalname,
+//             extractionMode: "ai",
+//             flagged: false,
+//             rawText: processed.text,
+//             confidence: extracted.confidence,
+//           });
+
+//           results.push({
+//             filename: file.originalname,
+//             status: 'matched',
+//             candidate: candidate,
+//           });
+//           matchedCount++;
+//         } else {
+//           // Candidate doesn't match - don't save
+//           results.push({
+//             filename: file.originalname,
+//             status: 'rejected',
+//             reason: 'Did not meet filter criteria',
+//           });
+//           rejectedCount++;
+//         }
+//       } catch (error) {
+//         results.push({
+//           filename: file.originalname,
+//           status: 'error',
+//           error: error instanceof Error ? error.message : 'Processing failed',
+//         });
+//         rejectedCount++;
+//       }
+//     }
+
+//     res.json({
+//       success: true,
+//       total: files.length,
+//       matched: matchedCount,
+//       rejected: rejectedCount,
+//       results: results,
+//       filterCriteria: filterCriteria,
+//     });
+//   } catch (error) {
+//     console.error("Bulk upload error:", error);
+//     res.status(500).json({ 
+//       error: "Failed to process bulk upload",
+//       details: error instanceof Error ? error.message : "Unknown error"
+//     });
+//   }
+// });
+
 // ✅ POST /api/candidates/bulk-upload-filter - Bulk upload with filtering
-app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request, res: Response) => {
+  app.post("/api/candidates/bulk-upload-filter", checkJwtWithLogging, validateDomain, extractUserInfo, upload.any(), async (req: Request, res: Response)=> {
   try {
     const files = req.files as Express.Multer.File[];
     
@@ -969,11 +1079,31 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
           });
           matchedCount++;
         } else {
-          // Candidate doesn't match - don't save
+          // ✅ UPDATED: Include extracted data for rejected resumes too
           results.push({
             filename: file.originalname,
             status: 'rejected',
+            candidate: {
+              fullName: extracted.fullName,
+              emails: extracted.emails,
+              phones: extracted.phones,
+              summary: extracted.summary,
+              education: extracted.education,
+              experience: extracted.experience,
+              skills: extracted.skills,
+              certifications: extracted.certifications,
+              attachments: processed.attachments,
+              sourceFile: file.originalname,
+              extractionMode: "ai",
+              rawText: processed.text,
+              confidence: extracted.confidence,
+            },
             reason: 'Did not meet filter criteria',
+            analysis: {
+              skills: `Has ${extracted.skills?.length || 0}/${filterCriteria.skills?.length || 0} required skills`,
+              experience: `${calculateTotalExperience(extracted)} years (need ${filterCriteria.minExperience || 0}-${filterCriteria.maxExperience || 'any'})`,
+              position: extracted.experience?.[0]?.title || 'Unknown',
+            },
           });
           rejectedCount++;
         }
@@ -1005,8 +1135,9 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
 });
 
 
+
   // GET /api/candidates/:id - Get single candidate
-  app.get("/api/candidates/:id", async (req, res) => {
+ app.get("/api/candidates/:id", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res) => {
     try {
       const candidate = await storage.getCandidate(req.params.id);
       if (!candidate) {
@@ -1019,8 +1150,71 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
     }
   });
 
+  // ✅ NEW: POST /api/candidates/save-force - Save rejected candidate anyway
+app.post("/api/candidates/save-force", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res) => {
+  try {
+    console.log("🚀 POST /api/candidates/save-force - Saving rejected candidate");
+    
+    const { candidate, reason, saveAnyway } = req.body;
+
+    if (!candidate || !candidate.fullName) {
+      console.error("❌ Missing candidate data");
+      return res.status(400).json({ 
+        error: "Candidate data with fullName is required" 
+      });
+    }
+
+    // ✅ Prepare candidate data for saving
+    const candidateData = {
+      fullName: candidate.fullName || null,
+      emails: Array.isArray(candidate.emails)
+        ? candidate.emails.filter((e: string) => e && e.trim())
+        : candidate.emails || [],
+      phones: Array.isArray(candidate.phones)
+        ? candidate.phones.filter((p: string) => p && p.trim())
+        : candidate.phones || [],
+      summary: candidate.summary || null,
+      education: candidate.education || [],
+      experience: candidate.experience || [],
+      skills: Array.isArray(candidate.skills)
+        ? candidate.skills.filter((s: string) => s && s.trim())
+        : candidate.skills || [],
+      certifications: candidate.certifications || [],
+      attachments: candidate.attachments || [],
+      sourceFile: candidate.sourceFile || "rejected-but-saved",
+      extractionMode: candidate.extractionMode || "bulk",
+      flagged: false,
+      rawText: candidate.rawText || "",
+      // ✅ Track rejection reason
+      rejectionReason: reason || "Did not meet filter criteria",
+      savedAnyway: saveAnyway || true,
+    };
+
+    console.log("📦 Saving candidate:", {
+      name: candidateData.fullName,
+      reason: candidateData.rejectionReason,
+    });
+
+    // ✅ Save to database
+    const saved = await storage.createCandidate(candidateData);
+
+    console.log("✅ Candidate saved successfully:", saved.id);
+
+    res.json({
+      success: true,
+      message: `${candidateData.fullName} saved despite rejection reason: ${reason}`,
+      candidate: saved,
+    });
+  } catch (error) {
+    console.error("❌ Error saving rejected candidate:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to save candidate",
+    });
+  }
+});
+
   // POST /api/candidates/:id - Update candidate
-  app.post("/api/candidates/:id", async (req, res) => {
+  app.post("/api/candidates/:id", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res)  => {
     try {
       const updated = await storage.updateCandidate(req.params.id, req.body);
       if (!updated) {
@@ -1034,7 +1228,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // POST /api/candidates/:id/flag - Flag candidate for re-extraction
-  app.post("/api/candidates/:id/flag", async (req, res) => {
+  app.post("/api/candidates/:id/flag", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res) => {
     try {
       const candidate = await storage.getCandidate(req.params.id);
       if (!candidate) {
@@ -1067,7 +1261,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
     }
   });
 
-  app.post("/api/extract", async (req: Request, res: Response) => {
+  app.post("/api/extract", checkJwtWithLogging, validateDomain, extractUserInfo, async (req: Request, res: Response)=> {
     console.log("🚀 START /api/extract");
     
     try {
@@ -1102,7 +1296,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // POST /api/extract/manual - Save manually extracted data
-  app.post("/api/extract/manual", async (req, res) => {
+  app.post("/api/extract/manual", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res)=> {
     try {
       const data = {
         fullName: req.body.fullName || null,
@@ -1135,7 +1329,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // POST /api/extract/ai - Run AI extraction on text
-  app.post("/api/extract/ai", async (req, res) => {
+  app.post("/api/extract/ai", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res) => {
     try {
       const { text, filename } = req.body;
       if (!text) {
@@ -1151,7 +1345,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // GET /api/jobs - List all jobs
-  app.get("/api/jobs", async (req, res) => {
+  app.get("/api/jobs", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res)  => {
     try {
       const jobs = await storage.getJobs();
       res.json(jobs);
@@ -1162,7 +1356,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // GET /api/jobs/:id - Get job status
-  app.get("/api/jobs/:id", async (req, res) => {
+  app.get("/api/jobs/:id", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res)  => {
     try {
       const job = await storage.getJob(req.params.id);
       if (!job) {
@@ -1176,7 +1370,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // ✅ ENHANCED GET /api/export - Export candidates to Excel
-  app.get("/api/export", async (req, res) => {
+  app.get("/api/export", checkJwtWithLogging, validateDomain, extractUserInfo, async (req, res)=> {
     try {
       const format = req.query.format || "xlsx";
       const candidates = await storage.getCandidates();
@@ -1334,7 +1528,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // ✅ DELETE /api/candidates/:id - Delete single candidate
-  app.delete("/api/candidates/:id", async (req: Request, res: Response) => {
+  app.delete("/api/candidates/:id", checkJwtWithLogging, validateDomain, extractUserInfo, async (req: Request, res: Response)  => {
     try {
       const deleted = await storage.deleteCandidate(req.params.id);
 
@@ -1362,7 +1556,7 @@ app.post("/api/candidates/bulk-upload-filter", upload.any(), async (req: Request
   });
 
   // ✅ DELETE /api/candidates - Delete all candidates
-  app.delete("/api/candidates", async (req: Request, res: Response) => {
+  app.delete("/api/candidates", checkJwtWithLogging, validateDomain, extractUserInfo, async (req: Request, res: Response) => {
     try {
       const count = await storage.deleteAllCandidates();
 
