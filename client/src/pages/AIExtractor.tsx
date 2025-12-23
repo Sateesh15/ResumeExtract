@@ -165,31 +165,71 @@ const uploadMutation = useMutation<UploadResponse, Error, File[]>({
   },
 });
 
-  const updateMutation = useMutation({
-    mutationFn: async (candidate: Candidate) => {
-      return await apiRequest("POST", `/api/candidates/${candidate.id}`, candidate);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "Candidate updated",
-        description: "Changes have been saved successfully.",
-      });
-    },
-  });
+  // ✅ UPDATE MUTATION
+const updateMutation = useMutation({
+  mutationFn: async (candidate: Candidate) => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
 
-  const flagMutation = useMutation({
-    mutationFn: async (candidateId: string) => {
-      return await apiRequest("POST", `/api/candidates/${candidateId}/flag`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
-      toast({
-        title: "Candidate flagged",
-        description: "This candidate has been flagged for deep extraction.",
-      });
-    },
-  });
+    const res = await fetch(`/api/candidates/${candidate.id}`, {
+      method: "POST",
+      headers, // ✅ Authorization header included
+      body: JSON.stringify(candidate),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to update candidate");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Updated",
+      description: "Changes have been saved successfully.",
+    });
+  },
+  onError: (error) => {
+    console.error("Update error:", error);
+    toast({
+      title: "❌ Update failed",
+      description: "Could not update candidate.",
+      variant: "destructive",
+    });
+  },
+});
+
+  // ✅ FLAG MUTATION
+const flagMutation = useMutation({
+  mutationFn: async (candidateId: string) => {
+    // ✅ Get authorization header
+    const headers = await getAuthHeaders();
+    headers["Content-Type"] = "application/json";
+
+    const res = await fetch(`/api/candidates/${candidateId}/flag`, {
+      method: "POST",
+      headers, // ✅ Authorization header included
+      body: JSON.stringify({}),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to flag candidate");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+    toast({
+      title: "✅ Flagged",
+      description: "This candidate has been flagged for deep extraction.",
+    });
+  },
+  onError: (error) => {
+    console.error("Flag error:", error);
+    toast({
+      title: "❌ Flag failed",
+      description: "Could not flag candidate.",
+      variant: "destructive",
+    });
+  },
+});
 
   const exportMutation = useMutation({
     mutationFn: async () => {

@@ -8,13 +8,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { FileText, Home as HomeIcon, Wand2, BrainCircuit, Upload, LogOut, Loader } from "lucide-react";
+import { FileText, Home as HomeIcon, Wand2, BrainCircuit, Upload, LogOut, Loader,Filter } from "lucide-react";
 import Home from "@/pages/Home";
 import ManualExtractor from "@/pages/ManualExtractor";
 import AIExtractor from "@/pages/AIExtractor";
 import NotFound from "@/pages/not-found";
 import BulkUpload from "./pages/BulkUpload";
 import Login from "@/pages/Login";
+import Candidates from "./pages/Candidates";
 import { useMsal } from "@azure/msal-react";
 
 // msalInstance is created in `client/src/lib/msalInstance.ts`
@@ -89,6 +90,16 @@ function Navigation() {
               Bulk Upload
             </Button>
           </Link>
+          <Link href="/candidates">
+            <Button
+              variant={isActive("/candidates") ? "default" : "ghost"}
+              className="gap-2"
+              data-testid="nav-bulk"
+            >
+              <Filter className="h-4 w-4" />
+              Filter Candidates
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -116,6 +127,7 @@ function ProtectedRouter() {
       <Route path="/manual" component={ManualExtractor} />
       <Route path="/ai" component={AIExtractor} />
       <Route path="/bulk-upload" component={BulkUpload} />
+      <Route path="/candidates" component={Candidates} />
       <Route component={NotFound} />
     </Switch>
   );
