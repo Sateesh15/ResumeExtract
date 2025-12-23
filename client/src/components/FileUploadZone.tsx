@@ -12,7 +12,7 @@ interface FileUploadZoneProps {
 
 export function FileUploadZone({
   onFilesSelected,
-  accept = ".pdf,.eml",
+  accept = ".pdf,.eml,.doc,.docx,.zip",
   multiple = true,
   disabled = false,
   className,
@@ -73,10 +73,10 @@ export function FileUploadZone({
         <div>
           <h3 className="text-lg font-medium mb-2">Upload Resume Files</h3>
           <p className="text-sm text-muted-foreground">
-            Drag and drop PDF or EML files here, or click to browse
+            Drag and drop PDF, EML, DOC/DOCX, or ZIP files here, or click to browse
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            Supports: PDF resumes, EML emails with attachments
+            Supports: PDF, EML, DOC/DOCX, and ZIP (containing supported files)
           </p>
         </div>
       </div>

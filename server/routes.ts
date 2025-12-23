@@ -563,17 +563,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "application/pdf",
         "message/rfc822",
         "application/octet-stream",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip",
+        "application/x-zip-compressed",
       ];
       const invalidFiles = files.filter(
         (f) =>
           !allowedTypes.includes(f.mimetype) &&
           !f.originalname.toLowerCase().endsWith(".eml") &&
-          !f.originalname.toLowerCase().endsWith(".pdf")
+          !f.originalname.toLowerCase().endsWith(".pdf") &&
+          !f.originalname.toLowerCase().endsWith(".doc") &&
+          !f.originalname.toLowerCase().endsWith(".docx") &&
+          !f.originalname.toLowerCase().endsWith(".zip")
       );
       
       if (invalidFiles.length > 0) {
         return res.status(400).json({
-          error: "Invalid file type. Only PDF and EML files are supported.",
+          error: "Invalid file type. Only PDF, EML, DOC/DOCX and ZIP files are supported.",
         });
       }
 
@@ -585,65 +592,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const file = files[0];
-      
-      const processed = await processFile(
-        file.buffer,
-        file.originalname,
-        file.mimetype
-      );
+      // Process all uploaded files
+      const processedResults: Array<{ filename: string; text: string; attachments: any[]; mimeType: string }> = [];
 
-      if (mode === "manual") {
+      for (const f of files) {
+        try {
+          const p = await processFile(f.buffer, f.originalname, f.mimetype);
+          processedResults.push({ filename: f.originalname, text: p.text, attachments: p.attachments, mimeType: f.mimetype });
+        } catch (err) {
+          console.error(`Error processing file ${f.originalname}:`, err);
+          processedResults.push({ filename: f.originalname, text: "", attachments: [], mimeType: f.mimetype });
+        }
+      }
+
+      // If manual mode and only one file was uploaded, keep existing response shape for compatibility
+      if (mode === "manual" && processedResults.length === 1) {
+        const single = processedResults[0];
         return res.json({
           success: true,
-          rawText: processed.text,
-          attachments: processed.attachments,
-          filename: file.originalname,
-        });
-      } else if (mode === "ai" && autoExtract) {
-        const extracted = await extractResumeData(processed.text, file.originalname);
-        
-        const candidate = await storage.createCandidate({
-          fullName: extracted.fullName,
-          emails: extracted.emails,
-          phones: extracted.phones,
-          summary: extracted.summary,
-          education: extracted.education,
-          experience: extracted.experience,
-          skills: extracted.skills,
-          certifications: extracted.certifications,
-          attachments: processed.attachments,
-          sourceFile: file.originalname,
-          extractionMode: "ai",
-          flagged: false,
-          rawText: processed.text,
-          confidence: extracted.confidence,
-        });
-
-        return res.json({
-          success: true,
-          totalFiles: files.length,
-          filesProcessed: 1,
-          candidate,
-        });
-      } else {
-        const job = await storage.createJob({
-          status: "queued",
-          files: [file.originalname],
-          mode: "ai",
-          totalFiles: files.length,
-          processedFiles: 0,
-          candidateIds: [],
-          error: null,
-          finishedAt: null,
-        });
-
-        return res.json({
-          success: true,
-          jobId: job.id,
-          totalFiles: files.length,
+          rawText: single.text,
+          attachments: single.attachments,
+          filename: single.filename,
         });
       }
+
+      // AI auto-extract: create candidates for each processed file and return all created candidates
+      if (mode === "ai" && autoExtract) {
+        const createdCandidates: any[] = [];
+
+        for (const item of processedResults) {
+          try {
+            // If there are processed attachments with extractedText, treat each as a separate resume
+            const processedAttachments = (item.attachments || []).filter((a: any) => a.extractedText && a.extractedText.trim().length > 0);
+
+            if (processedAttachments.length > 0) {
+              for (const att of processedAttachments) {
+                try {
+                  const extracted = await extractResumeData(att.extractedText, `${item.filename}::${att.filename}`);
+
+                  const candidate = await storage.createCandidate({
+                    fullName: extracted.fullName,
+                    emails: extracted.emails,
+                    phones: extracted.phones,
+                    summary: extracted.summary,
+                    education: extracted.education,
+                    experience: extracted.experience,
+                    skills: extracted.skills,
+                    certifications: extracted.certifications,
+                    attachments: [att],
+                    sourceFile: `${item.filename}::${att.filename}`,
+                    extractionMode: "ai",
+                    flagged: false,
+                    rawText: att.extractedText,
+                    confidence: extracted.confidence,
+                  });
+
+                  createdCandidates.push({ filename: `${item.filename}::${att.filename}`, candidate });
+                } catch (err) {
+                  console.error(`Extraction/create candidate failed for attachment ${att.filename} inside ${item.filename}:`, err);
+                }
+              }
+
+              // Skip extracting the combined item.text when attachments were processed individually
+              continue;
+            }
+
+            // Otherwise, fall back to extracting from the main item text
+            if (item.text && item.text.trim().length > 0) {
+              const extracted = await extractResumeData(item.text, item.filename);
+
+              const candidate = await storage.createCandidate({
+                fullName: extracted.fullName,
+                emails: extracted.emails,
+                phones: extracted.phones,
+                summary: extracted.summary,
+                education: extracted.education,
+                experience: extracted.experience,
+                skills: extracted.skills,
+                certifications: extracted.certifications,
+                attachments: item.attachments,
+                sourceFile: item.filename,
+                extractionMode: "ai",
+                flagged: false,
+                rawText: item.text,
+                confidence: extracted.confidence,
+              });
+
+              createdCandidates.push({ filename: item.filename, candidate });
+            }
+          } catch (err) {
+            console.error(`Extraction/create candidate failed for ${item.filename}:`, err);
+          }
+        }
+
+        return res.json({
+          success: true,
+          totalFiles: files.length,
+          filesProcessed: createdCandidates.length,
+          candidates: createdCandidates,
+        });
+      }
+
+      // Otherwise (ai mode queued) create a queued job listing all filenames
+      const job = await storage.createJob({
+        status: "queued",
+        files: processedResults.map((p) => p.filename),
+        mode: "ai",
+        totalFiles: files.length,
+        processedFiles: 0,
+        candidateIds: [],
+        error: null,
+        finishedAt: null,
+      });
+
+      return res.json({
+        success: true,
+        jobId: job.id,
+        totalFiles: files.length,
+      });
     } catch (error) {
       console.error("Upload error:", error);
       res.status(500).json({ error: "Failed to process upload" });

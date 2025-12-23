@@ -415,7 +415,7 @@ export default function BulkUpload() {
                 <input
                   type="file"
                   multiple
-                  accept=".pdf"
+                  accept=".pdf,.eml,.doc,.docx,.zip"
                   onChange={handleFileChange}
                   className="hidden"
                   id="file-upload"
@@ -426,7 +426,7 @@ export default function BulkUpload() {
                   onClick={() => document.getElementById('file-upload')?.click()}
                   type="button"
                 >
-                  Select PDF Files
+                  Select Files (PDF, EML, DOC/DOCX, ZIP)
                 </Button>
                 <p className="text-sm text-muted-foreground">
                   {files.length > 0 ? `${files.length} files selected` : 'No files selected'}
