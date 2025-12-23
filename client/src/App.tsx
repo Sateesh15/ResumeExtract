@@ -1,6 +1,6 @@
 import { Switch, Route, Link, useLocation } from "wouter";
-import { useEffect, useRef } from "react";
-import { MsalProvider } from "@azure/msal-react";
+import { useEffect, useRef, ReactNode } from "react";
+import { MsalProvider, useIsAuthenticated, useMsal } from "@azure/msal-react";
 import msalInstance from "./lib/msalInstance";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { queryClient } from "./lib/queryClient";
@@ -16,17 +16,7 @@ import NotFound from "@/pages/not-found";
 import BulkUpload from "./pages/BulkUpload";
 import Login from "@/pages/Login";
 import Candidates from "./pages/Candidates";
-import { useMsal } from "@azure/msal-react";
-
 // msalInstance is created in `client/src/lib/msalInstance.ts`
-
-import { PublicClientApplication } from "@azure/msal-browser";
-import { MsalProvider, useIsAuthenticated, useMsal } from "@azure/msal-react";
-import { msalConfig } from "./msalConfig";
-import Login from "./pages/Login"; 
-import { ReactNode } from "react";
-
-const msalInstance = new PublicClientApplication(msalConfig);
 
 
 function AuthGate({ children }: { children: ReactNode }) {
