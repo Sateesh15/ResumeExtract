@@ -21,4 +21,5 @@ declare module 'adm-zip' {
     getEntry(entryName: string): IZipEntry | null;
     readAsText(entry: IZipEntry | string, encoding?: string): string;
   }
+  
 }
